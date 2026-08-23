@@ -1,29 +1,32 @@
 {
-  "name": "KeyMesh",
+  "name": "keymesh",
   "private": true,
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "test": "turbo run test",
     "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "rust:test": "cargo test --manifest-path crates/keymesh-core/Cargo.toml",
+    "contracts:test": "forge test --root contracts/ethereum"
   },
   "devDependencies": {
-    "prettier": "^3.7.4",
+    "@biomejs/biome": "1.9.4",
     "turbo": "^2.10.11",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^2.1.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "devEngines": {
     "packageManager": {
       "name": "bun",
       "version": "1.3.9"
     }
-  },
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
+  }
 }

@@ -27,6 +27,13 @@ out/
 build
 dist
 
+# Rust
+target/
+
+# Foundry
+contracts/ethereum/broadcast/
+contracts/ethereum/cache/
+contracts/ethereum/out/
 
 # Debug
 npm-debug.log*
@@ -36,3 +43,18 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Logs
+*.log
+
+# TypeScript
+*.tsbuildinfo

@@ -1,159 +1,171 @@
-# Turborepo starter
+# KeyMesh
 
-This Turborepo starter is maintained by the Turborepo core team.
+> Non-custodial digital asset key management, transaction authorization, and
+> recovery — using threshold-style cryptography, guardian quorums, and
+> timelocked recovery. Ethereum-first.
 
-## Using this example
+**Status: foundation / prototype.** This repository is a clean starting point
+with real state machines and tests, not a finished protocol. Security-critical
+cryptography (threshold signing / MPC) is deliberately **not implemented yet**
+— boundaries, interfaces, and honest maturity labels are in place instead.
+See [docs/security/security-model.md](docs/security/security-model.md).
 
-Run the following command:
+## What is KeyMesh?
 
-```sh
-npx create-turbo@latest
+A wallet's authority is distributed across:
+
+- **Devices** you control (authorize everyday transactions),
+- **Guardians** you trust (weighted approvals for sensitive actions), and
+- **Policies + Timelocks** that decide how much approval each action class
+  needs and how long hostile actions stay cancellable.
+
+```
+Normal transaction      -> device signature
+High-value transaction  -> device signature + guardian quorum
+Recovery                -> guardian threshold -> timelock -> new device
 ```
 
-## What's inside?
+Guardians can approve or cancel — they can never move funds directly. There is
+no seed phrase to lose.
 
-This Turborepo includes the following packages/apps:
+## Architecture
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```
+apps/dashboard      Next.js UI — talks ONLY to the SDK
+packages/sdk        Public TypeScript API (@keymesh/sdk)
+packages/protocol   Domain models, state machines, validation (@keymesh/protocol)
+packages/types      Shared primitives (@keymesh/types)
+packages/config     Shared tooling config (@keymesh/config)
+crates/keymesh-core Rust core: recovery FSM, policy engine,
+                    canonical serialization, crypto BOUNDARY
+contracts/ethereum  Foundry contracts: KeymeshWallet, GuardianRegistry,
+                    RecoveryManager, PolicyManager
+docs/               Architecture, protocol specs, security model
 ```
 
-Without global `turbo`, use your package manager:
+Design rules: the UI never touches crypto; the SDK never holds keys; the Rust
+core is dependency-free while in prototype; unimplemented capabilities revert
+or are labeled `prototype` rather than faked.
 
-```sh
-cd my-turborepo
-npx turbo build
-bun dlx turbo build
-bun exec turbo build
+Details: [docs/architecture/overview.md](docs/architecture/overview.md).
+
+## Repository structure
+
+```text
+keymesh/
+├── apps/dashboard/          # Next.js dashboard (mock data via SDK)
+├── packages/
+│   ├── sdk/                 # @keymesh/sdk public API
+│   ├── protocol/            # @keymesh/protocol domain layer
+│   ├── types/               # @keymesh/types primitives
+│   └── config/              # @keymesh/config shared tsconfigs
+├── crates/keymesh-core/     # Rust protocol core (cargo test)
+├── contracts/ethereum/      # Foundry contracts (forge test)
+├── docs/
+│   ├── architecture/
+│   ├── protocol/
+│   ├── security/            # threat-model.md, security-model.md
+│   └── development/
+├── scripts/
+├── .github/workflows/ci.yml
+└── turbo.json               # build/test/lint/typecheck/format/dev pipelines
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+## Prerequisites
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+| Tool    | Needed for        | Check             |
+| ------- | ----------------- | ----------------- |
+| Bun ≥1.1| everything JS/TS  | `bun --version`   |
+| Rust ≥1.75 | crates/        | `cargo --version` |
+| Foundry | contracts/        | `forge --version` |
 
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Installation
 
 ```sh
-cd my-turborepo
-turbo dev
+bun install
+cd contracts/ethereum && forge install foundry-rs/forge-std --no-commit && cd ../..
+cp .env.example .env.local   # placeholders only; never commit real values
 ```
 
-Without global `turbo`, use your package manager:
+## Development
 
 ```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
+bun run dev        # dashboard at http://localhost:3100
+bun run test       # workspace tests (turbo)
+bun run lint       # Biome lint
+bun run format     # Biome format
+bun run typecheck  # tsc per package
+bun run build      # production build
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Testing
 
 ```sh
-turbo dev --filter=web
+# TypeScript (Vitest): protocol validation, SDK behavior, policy engine,
+# recovery transitions, serialization helpers
+bun run test
+
+# Rust: recovery FSM, policy evaluation, canonical codec, error handling
+cargo test --manifest-path crates/keymesh-core/Cargo.toml
+
+# Solidity (Foundry): guardians, recovery state machine, timelock,
+# access control, invalid transitions
+forge test --root contracts/ethereum
 ```
 
-Without global `turbo`:
+## Building
 
 ```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
+bun run build                                   # all workspaces (Next.js etc.)
+forge build --root contracts/ethereum           # contracts
+cargo build --manifest-path crates/keymesh-core/Cargo.toml
 ```
 
-### Remote Caching
+## Rust development
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+The security-critical core lives in `crates/keymesh-core`. It is intentionally
+zero-dependency during prototyping. State machines take time as input (clock
+injection) so tests are deterministic. The crypto module exposes the trait a
+future reviewed TSS/MPC implementation must satisfy; the bundled mock is for
+tests only and labeled accordingly.
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+See [crates/keymesh-core/README.md](crates/keymesh-core/README.md).
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+## Foundry development
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Contracts live in `contracts/ethereum`. The skeleton defines surfaces and
+enforces the recovery/timelock semantics; fund-moving execution is disabled on
+purpose until Phase 1 lands signing verification.
 
-```sh
-cd my-turborepo
-turbo login
-```
+See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 
-Without global `turbo`, use your package manager:
+## Security notes
 
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
+- **No private keys or seed phrases are ever handled by the SDK or dashboard.**
+  Devices hold their own keys behind the `Signer` interface.
+- No custom cryptography exists here, and none will be written from scratch.
+- Every module carries an explicit maturity label (`prototype`, `experimental`,
+  `production-grade`). Trust code by its label, not its file name.
+- Read [docs/security/threat-model.md](docs/security/threat-model.md) before
+  contributing to security-relevant areas.
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+## Roadmap
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+**Phase 1 — Ethereum wallet (current focus)**
+1. Ethereum wallet contract: device/threshold-authorized execution
+2. Guardian system: on-chain registration + weighted approvals end-to-end
+3. Recovery state machine wired across TS/Rust/Solidity (+conformance tests)
+4. Transaction policy enforcement on-chain
+5. Timelock enforcement integrated with PolicyManager
+6. Real secp256k1 signing via reviewed libraries; replay protection on-chain
+7. Testing: property/fuzz suites, invariant tests, coverage gates
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+**Phase 2 — Advanced cryptography & multi-chain**
+1. Threshold signing / MPC integration (audited stacks only)
+2. Solana adapter (chain-kind abstraction already exists)
+3. Advanced cryptography: key-share rotation, proactive refresh
+4. Security hardening: audits, fuzzing campaigns, formal specs where warranted
 
-```sh
-turbo link
-```
+## License
 
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+MIT OR Apache-2.0 (to be finalized).

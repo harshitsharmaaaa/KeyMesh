@@ -1,0 +1,15 @@
+[package]
+name = "keymesh-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "KeyMesh protocol core: recovery state machine, policies, serialization, and crypto boundaries (prototype maturity)."
+license = "MIT OR Apache-2.0"
+
+# IMPORTANT: this crate is intentionally dependency-free while it is a
+# prototype. Cryptographic dependencies will be added only after they are
+# selected and reviewed for Phase 2 (threshold signing / MPC). See
+# docs/architecture/overview.md.
+[dependencies]
+
+[dev-dependencies]

@@ -1,0 +1,25 @@
+{
+  "name": "@keymesh/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared development configuration for the KeyMesh monorepo (TypeScript presets, shared tooling templates).",
+  "files": ["typescript", "vitest"],
+  "exports": {
+    "./typescript/base": "./typescript/base.json",
+    "./typescript/nextjs": "./typescript/nextjs.json",
+    "./typescript/react-library": "./typescript/react-library.json",
+    "./typescript/node": "./typescript/node.json"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"@keymesh/config: no tests (configuration package)\""
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "typescript": "5.9.2",
+    "vitest": "^2.1.3"
+  }
+}

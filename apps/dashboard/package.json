@@ -1,0 +1,29 @@
+{
+  "name": "@keymesh/dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "next start --port 3100",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"@keymesh/dashboard: no unit tests yet (UI covered by manual QA + future e2e)\""
+  },
+  "dependencies": {
+    "@keymesh/sdk": "*",
+    "@keymesh/types": "*",
+    "next": "^15.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@keymesh/config": "*",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "typescript": "5.9.2"
+  }
+}

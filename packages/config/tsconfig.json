@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./typescript/base.json",
+  "include": ["vitest/**/*.ts"],
+  "exclude": ["node_modules"]
+}
