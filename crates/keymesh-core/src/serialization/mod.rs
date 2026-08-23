@@ -40,8 +40,14 @@ impl Encoder {
         self.buf.extend_from_slice(&v.to_be_bytes());
     }
 
+    /// Appends raw bytes with no length prefix (fixed-width fields).
+    pub fn write_raw(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes);
+    }
+
     pub fn write_bytes(&mut self, bytes: &[u8]) {
-        self.buf.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(bytes.len() as u32).to_be_bytes());
         self.buf.extend_from_slice(bytes);
     }
 }
@@ -76,7 +82,9 @@ impl<'a> Decoder<'a> {
 
     pub fn read_u8(&mut self) -> Result<u8, KeymeshError> {
         if self.remaining() < 1 {
-            return Err(KeymeshError::InvalidInput("unexpected end of buffer".into()));
+            return Err(KeymeshError::InvalidInput(
+                "unexpected end of buffer".into(),
+            ));
         }
         let v = self.buf[self.pos];
         self.pos += 1;

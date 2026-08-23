@@ -1,8 +1,10 @@
 # KeyMesh Architecture Overview
 
-> **Status: intended architecture.** This document describes the design the
-> repository is being built toward. Components marked **prototype** are
-> scaffolding with explicit boundaries, not finished systems.
+> **Status: Phase 1.1 implemented** — one real end-to-end authorization path
+> (SDK → canonical encoding → ECDSA device signature → Solidity recovery →
+> execution on Anvil) plus prototype scaffolding for everything else.
+> Components are labeled by maturity; nothing here is production-ready or
+> audited.
 
 ## What is KeyMesh?
 
@@ -46,29 +48,55 @@ they can never move funds directly.
 ### Dependency rules
 
 1. The dashboard imports `@keymesh/sdk` only — never `@keymesh/protocol`
-   internals.
+   internals, and never cryptographic or authorization logic.
 2. The SDK depends on `@keymesh/protocol` and `@keymesh/types`; nothing
    depends upward.
-3. `crates/keymesh-core` has zero dependencies while in prototype; crypto
-   libraries will be added in Phase 2 after review.
-4. Contracts depend on nothing third-party yet; OpenZeppelin adoption is a
-   planned Phase 1 hardening step (see `contracts/ethereum/README.md`).
-5. TypeScript and Rust implement mirrored semantics for state machines. Rust
-   is the reference; TS mirrors it so client-side previews cannot drift from
-   on-chain enforcement. A conformance test suite tying them together is a
-   Phase 1 deliverable.
+3. `crates/keymesh-core` has one hash dependency (`tiny-keccak`) so it can
+   produce byte-identical canonical digests; asymmetric crypto stays behind
+   the `CryptoProvider` trait (mock only today).
+4. Contracts depend on OpenZeppelin (ECDSA, ReentrancyGuard) and forge-std;
+   both are audited and pinned as git submodules.
+5. The canonical transaction format is defined once
+   ([protocol/canonical-transaction.md](../protocol/canonical-transaction.md))
+   and implemented byte-for-byte in TypeScript, Rust, and Solidity. Shared
+   test vectors in `packages/protocol/src/vectors.ts` pin all three; a
+   mismatch anywhere is a protocol bug.
+
+## How a Phase 1.1 transaction flows
+
+```
+apps/dashboard        user intent; NO crypto logic (server-side demo route)
+    ↓
+packages/sdk          build tx -> protocol encoding -> digest -> @noble/curves
+    ↓                 ECDSA sign -> viem submit to KeymeshWallet.execute
+packages/protocol     THE canonical format definition + shared vectors
+    ↓
+crates/keymesh-core   same encoding/digest in Rust (reference for signers)
+    ↓
+contracts/ethereum    KeymeshWallet: recover signer -> check device, wallet,
+                      chainId, nonce, expiry -> effects-before-interaction
+                      execution on Anvil
+```
+
+Any relayer may submit (`msg.sender` is irrelevant); authority comes solely
+from a registered device's signature over the canonical digest.
 
 ## Component maturity
 
-| Component             | State     | Notes                                              |
-| --------------------- | --------- | -------------------------------------------------- |
-| Domain models (TS)    | prototype | Zod-validated models and pure state transitions    |
-| SDK                   | prototype | Local-state client; signer/chain adapters are TODO |
-| Dashboard             | prototype | Mock data through the SDK surface                  |
-| Rust core             | prototype | Real FSMs + policy engine; mock crypto behind trait|
-| Ethereum contracts    | skeleton  | Surfaces + tests; execution disabled               |
-| Threshold signing/MPC | not started | Phase 2                                          |
-| Solana adapter        | not started | Phase 2; chain-kind abstraction already exists   |
+| Component             | State       | Notes                                                     |
+| --------------------- | ----------- | --------------------------------------------------------- |
+| Canonical TX format   | implemented | TS/Rust/Solidity byte-identical via shared vectors         |
+| KeymeshWallet         | experimental| device auth + replay/expiry guards, works on Anvil         |
+| SDK on-chain flow     | experimental| build/sign/execute session; not production custody         |
+| Domain models (TS)    | prototype   | Zod-validated models and pure state transitions            |
+| SDK local-state APIs  | prototype   | wallets/guardians/recovery over in-memory storage          |
+| Dashboard             | prototype   | mock data through the SDK + server-side Anvil demo route   |
+| Rust core             | prototype   | real FSMs/policy engine + implemented TX codec; mock crypto|
+| GuardianRegistry      | skeleton    | surfaces + tests; not wired into the wallet yet            |
+| RecoveryManager       | skeleton    | state machine + timelock tests; not wired to devices yet   |
+| PolicyManager         | skeleton    | policy storage/tests; no enforcement path from execute()   |
+| Threshold signing/MPC | not started | Phase 2                                                    |
+| Solana adapter        | not started | Phase 2; chain-kind abstraction already exists             |
 
 ## Chain abstraction
 
@@ -90,8 +118,13 @@ or recovery.
 Full details: [security/security-model.md](../security/security-model.md) and
 [security/threat-model.md](../security/threat-model.md). In short:
 
-- No single party (including all guardians colluding before a timelock)
-  can take over a wallet faster than the timelock allows.
-- The protocol assumes honest majority of guardian weight, secure devices,
-  and correct contracts. It explicitly does NOT protect against a compromised
-  device combined with fast guardian collusion inside one timelock window.
+- Phase 1.1 authority = one ECDSA key per device. A compromised device key can
+  drain the wallet one valid transaction at a time; there is no threshold yet.
+- Device-set management (register/revoke) is gated on a transitional
+  deployer-chosen `manager` account — explicitly a Phase 1 control, to be
+  replaced by guardian/recovery governance. No permanent admin exists and none
+  should be added.
+- The design goal remains: no single party can take over faster than the
+  timelock allows once guardians/recovery are wired in. The protocol does NOT
+  protect against a compromised device, and today nothing else protects you
+  either.

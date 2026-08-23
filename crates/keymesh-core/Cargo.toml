@@ -3,13 +3,15 @@ name = "keymesh-core"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-description = "KeyMesh protocol core: recovery state machine, policies, serialization, and crypto boundaries (prototype maturity)."
+description = "KeyMesh protocol core: recovery state machine, policies, serialization, and crypto boundaries."
 license = "MIT OR Apache-2.0"
 
-# IMPORTANT: this crate is intentionally dependency-free while it is a
-# prototype. Cryptographic dependencies will be added only after they are
-# selected and reviewed for Phase 2 (threshold signing / MPC). See
-# docs/architecture/overview.md.
 [dependencies]
+# Keccak-256 for canonical transaction digests (KEYMESH_TX_V1). Required so
+# this crate produces byte-identical digests to the Solidity contracts and
+# TypeScript protocol package (shared test vectors enforce this). This is a
+# hash function dependency only; asymmetric cryptography remains behind the
+# CryptoProvider trait and will adopt reviewed implementations in Phase 2.
+tiny-keccak = { version = "2", features = ["keccak"] }
 
 [dev-dependencies]

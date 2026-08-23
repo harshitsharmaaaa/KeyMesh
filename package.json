@@ -12,7 +12,8 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules .turbo",
     "rust:test": "cargo test --manifest-path crates/keymesh-core/Cargo.toml",
-    "contracts:test": "forge test --root contracts/ethereum"
+    "contracts:test": "forge test --root contracts/ethereum",
+    "integration:anvil": "bun packages/sdk/scripts/anvil-integration.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

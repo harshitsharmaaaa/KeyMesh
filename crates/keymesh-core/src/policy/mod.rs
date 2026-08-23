@@ -59,10 +59,14 @@ impl Policy {
     /// A sensible default policy matching the conceptual model:
     /// normal -> device only; high-value -> device + guardians; management
     /// operations get conservative defaults.
-    pub fn default() -> Self {
+    pub fn standard() -> Self {
         Self {
             rules: vec![
-                PolicyRule { class: TransactionClass::Normal, required_weight: 1, timelock_seconds: 0 },
+                PolicyRule {
+                    class: TransactionClass::Normal,
+                    required_weight: 1,
+                    timelock_seconds: 0,
+                },
                 PolicyRule {
                     class: TransactionClass::HighValue,
                     required_weight: 2,
@@ -73,8 +77,16 @@ impl Policy {
                     required_weight: 2,
                     timelock_seconds: 24 * 3600,
                 },
-                PolicyRule { class: TransactionClass::PolicyUpdate, required_weight: 2, timelock_seconds: 48 * 3600 },
-                PolicyRule { class: TransactionClass::Recovery, required_weight: 3, timelock_seconds: 7 * 24 * 3600 },
+                PolicyRule {
+                    class: TransactionClass::PolicyUpdate,
+                    required_weight: 2,
+                    timelock_seconds: 48 * 3600,
+                },
+                PolicyRule {
+                    class: TransactionClass::Recovery,
+                    required_weight: 3,
+                    timelock_seconds: 7 * 24 * 3600,
+                },
             ],
             default_weight: 1,
         }
@@ -142,7 +154,7 @@ mod tests {
 
     #[test]
     fn normal_transfers_need_device_only() {
-        let policy = Policy::default();
+        let policy = Policy::standard();
         assert_eq!(
             policy.evaluate(TransactionClass::Normal, 1, 0).unwrap(),
             AuthorizationDecision::Authorized
@@ -155,7 +167,7 @@ mod tests {
 
     #[test]
     fn high_value_needs_quorum() {
-        let policy = Policy::default();
+        let policy = Policy::standard();
         assert_eq!(
             policy.evaluate(TransactionClass::HighValue, 1, 0).unwrap(),
             AuthorizationDecision::NeedsApprovals { missing_weight: 1 }
@@ -168,21 +180,25 @@ mod tests {
 
     #[test]
     fn recovery_enforces_timelock() {
-        let policy = Policy::default();
+        let policy = Policy::standard();
         let week = 7 * 24 * 3600;
         assert_eq!(
             policy.evaluate(TransactionClass::Recovery, 3, 0).unwrap(),
-            AuthorizationDecision::TimelockActive { remaining_seconds: week }
+            AuthorizationDecision::TimelockActive {
+                remaining_seconds: week
+            }
         );
         assert_eq!(
-            policy.evaluate(TransactionClass::Recovery, 3, week).unwrap(),
+            policy
+                .evaluate(TransactionClass::Recovery, 3, week)
+                .unwrap(),
             AuthorizationDecision::Authorized
         );
     }
 
     #[test]
     fn classify_by_value() {
-        let policy = Policy::default();
+        let policy = Policy::standard();
         let one_eth = 1_000_000_000_000_000_000u128;
         assert_eq!(
             policy.classify_transfer(one_eth).unwrap(),
@@ -196,10 +212,12 @@ mod tests {
 
     #[test]
     fn unknown_class_falls_back_to_default() {
-        let mut policy = Policy::default();
+        let mut policy = Policy::standard();
         policy.rules.clear();
         assert_eq!(
-            policy.evaluate(TransactionClass::PolicyUpdate, 1, 0).unwrap(),
+            policy
+                .evaluate(TransactionClass::PolicyUpdate, 1, 0)
+                .unwrap(),
             AuthorizationDecision::Authorized
         );
     }

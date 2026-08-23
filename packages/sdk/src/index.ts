@@ -1,9 +1,11 @@
 /**
  * @keymesh/sdk — public entry point.
  *
- * MATURITY: prototype. All state is local; no network calls, no signatures,
- * no key material handling. See docs/security/security-model.md for the
- * precise list of guarantees this build does and does not provide.
+ * MATURITY: prototype + experimental on-chain flow (Phase 1.1). The local
+ * state APIs remain prototype-only. The `onchain` surface performs real
+ * device-signed Ethereum transactions against a configured chain (Anvil in
+ * development) using audited primitives (@noble/curves ECDSA, viem).
+ * Not audited; not production custody; no TSS/MPC yet.
  */
 export { GuardianApi, type CreateGuardianInput } from './guardian';
 export { PolicyApi, type UpsertPolicyRuleInput } from './policy';
@@ -18,6 +20,18 @@ export {
   createInMemoryStorage,
 } from './client';
 export { WalletApi, type CreateDeviceInput, type CreateWalletInput } from './wallet';
+export {
+  buildKeymeshTransaction,
+  createKeymeshSession,
+  deployKeymeshWallet,
+  KeymeshWalletSession,
+  normalizeVTo2728,
+  type ExecutionResult,
+  type KeymeshSessionConfig,
+  type SignedKeymeshTransaction,
+} from './onchain/client';
+export { keymeshWalletAbi } from './onchain/abi';
+export { canonicalTransactionHex, hashKeymeshTransaction } from '@keymesh/protocol';
 
 import type {
   Device,

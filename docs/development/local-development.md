@@ -33,10 +33,50 @@ bun run typecheck  # tsc per package
 bun run build      # production builds
 
 cargo test --manifest-path crates/keymesh-core/Cargo.toml    # Rust tests
+cargo fmt --manifest-path crates/keymesh-core/Cargo.toml     # Rust formatting
 forge test --root contracts/ethereum                          # Solidity tests
 ```
 
 Turbo caches everything: re-runs with unchanged inputs are instant.
+
+## Phase 1.1: end-to-end Anvil integration
+
+One command runs the full device-signed flow against a disposable local chain:
+
+```sh
+bun run integration:anvil
+```
+
+The script (`packages/sdk/scripts/anvil-integration.ts`) starts Anvil itself,
+builds the contracts, deploys `KeymeshWallet`, registers a second device, then
+creates → signs → executes a real 0.1 ETH transfer through the SDK and asserts:
+
+- recipient balance changed,
+- wallet nonce incremented,
+- `TransactionExecuted` event decoded from the receipt,
+- replaying the same signed payload reverts (`InvalidNonce`),
+- an unregistered key's signature reverts (`UnauthorizedDevice`),
+- a revoked device's signature reverts.
+
+It uses only the well-known PUBLIC Anvil fixture keys. Never point this script
+at a real network. Port can be changed with `KEYMESH_ANVIL_PORT`.
+
+If Foundry binaries are not on `PATH`, scripts fall back to
+`~/.foundry/bin/{anvil,forge}`.
+
+### Dashboard demo of the same flow
+
+```sh
+anvil            # terminal 1 (or any node on 127.0.0.1:8545)
+forge build --root contracts/ethereum   # once; produces out/ artifacts
+bun run dev      # terminal 2
+```
+
+Open <http://localhost:3100/demo> and click **Run demo transaction**. The
+Next.js route (`app/api/keymesh-demo/route.ts`) runs entirely server-side: it
+deploys a fresh wallet, funds it, then drives create → sign → execute through
+`@keymesh/sdk` and returns each step for display. Keys are PUBLIC fixture keys
+that never reach the browser. RPC override: `KEYMESH_DEMO_RPC_URL`.
 
 ## Workspace map
 
@@ -87,5 +127,7 @@ prerequisites. TS work does not require it.
 ```sh
 bun run format && bun run lint && bun run typecheck && bun run test && bun run build
 cargo test --manifest-path crates/keymesh-core/Cargo.toml
-forge test --root contracts/ethereum   # if contracts changed
+cargo fmt --check --manifest-path crates/keymesh-core/Cargo.toml
+forge build --root contracts/ethereum && forge test --root contracts/ethereum   # if contracts changed
+bun run integration:anvil                                                       # if SDK/contracts changed
 ```

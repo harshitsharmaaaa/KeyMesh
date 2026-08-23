@@ -1,7 +1,10 @@
 # KeyMesh Protocol Overview
 
-> **Status: design specification.** Describes the protocol the implementation
-> targets. Anything not yet implemented is marked explicitly.
+> **Status: Phase 1.1 implemented + design specification.** The device-signed
+> Ethereum transaction path is real (see
+> [canonical-transaction.md](canonical-transaction.md)). Guardian/recovery
+> enforcement on-chain remains design-stage; anything not yet implemented is
+> marked explicitly.
 
 ## Protocol model
 
@@ -57,19 +60,26 @@ Recovery
 - A hostile recovery takes at least one timelock window, during which any
   active guardian can cancel it.
 - All state transitions are deterministic and mirrored between the Rust core,
-  TypeScript protocol package, and Solidity contracts. Conformance tests are a
-  Phase 1 deliverable.
+  TypeScript protocol package, and Solidity contracts.
+
+**Enforced today (Phase 1.1):** a transaction executes only when its ECDSA
+signature recovers to a registered device over the canonical
+`KEYMESH_TX_V1` digest, with wallet/chainId binding, sequential nonce, and
+inclusive expiry checked on-chain. Cross-language conformance vectors pin the
+format in all three implementations.
 
 ## Serialization & signing
 
-- Canonical binary encoding lives in `crates/keymesh-core/src/serialization`
-  (big-endian integers, u32 length prefixes, fixed u8 discriminants). Signatures
-  cover canonical encodings so there is exactly one valid byte string per
-  message.
-- Signing payloads are domain-separated (`KEYMESH/tx-auth/v1`,
-  `KEYMESH/recovery/v1`, `KEYMESH/device-reg/v1`) to prevent cross-protocol
-  replay. Versioned domains allow future format changes without breaking old
-  signatures.
+- The signed-transaction encoding is specified once in
+  [canonical-transaction.md](canonical-transaction.md) and implemented
+  byte-for-byte in TypeScript (`packages/protocol/src/canonical.ts`), Rust
+  (`crates/keymesh-core/src/transaction`), and Solidity
+  (`contracts/ethereum/src/KeymeshTx.sol`). Shared vectors live in
+  `packages/protocol/src/vectors.ts`.
+- Transaction signatures are domain separated by the `KEYMESH_TX_V1` domain
+  tag plus `wallet` and `chainId` fields inside every digest. Future message
+  classes (recovery approvals, device registration) will get their own
+  versioned domains (`KEYMESH_*_V1` pattern) before any of them is signed.
 
 See also: [wallet-lifecycle.md](wallet-lifecycle.md),
 [recovery.md](recovery.md), [transaction-policy.md](transaction-policy.md).

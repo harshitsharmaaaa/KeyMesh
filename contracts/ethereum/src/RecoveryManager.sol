@@ -31,6 +31,7 @@ contract RecoveryManager is IRecoveryManager {
 
     mapping(address wallet => RecoveryRequest) private _requests;
     mapping(address wallet => mapping(address guardian => bool)) private _hasApproved;
+    mapping(address wallet => address[]) private _approverList;
 
     constructor(IGuardianRegistry registry) {
         if (address(registry) == address(0)) revert KeymeshErrors.ZeroAddress();
@@ -73,6 +74,7 @@ contract RecoveryManager is IRecoveryManager {
         uint256 weight = guardianRegistry.weightOf(wallet, guardian);
         request.approvalsWeight += weight;
         _hasApproved[wallet][guardian] = true;
+        _approverList[wallet].push(guardian);
 
         emit RecoveryApproved(wallet, guardian, request.approvalsWeight);
 
@@ -91,6 +93,7 @@ contract RecoveryManager is IRecoveryManager {
         }
 
         request.state = RecoveryState.Completed;
+        _clearApprovals(wallet);
         emit RecoveryCompleted(wallet, request.newDevice);
         // TODO(phase-1): call into KeymeshWallet to authorize `newDevice`.
     }
@@ -100,7 +103,7 @@ contract RecoveryManager is IRecoveryManager {
         if (_isTerminal(request.state)) revert NoActiveRecovery();
         // TODO(phase-1): allow wallet/owner devices and guardians to cancel;
         // prototype permits any caller so tests can exercise the transition.
-        delete _hasApproved[wallet];
+        _clearApprovals(wallet);
         request.state = RecoveryState.Cancelled;
         emit RecoveryCancelled(wallet);
     }
@@ -125,5 +128,15 @@ contract RecoveryManager is IRecoveryManager {
 
     function _isTerminal(RecoveryState state) internal pure returns (bool) {
         return state == RecoveryState.Completed || state == RecoveryState.Cancelled;
+    }
+
+    /// @notice Resets per-attempt approval state so a future recovery attempt
+    /// starts from zero (no partial credit across attempts).
+    function _clearApprovals(address wallet) private {
+        address[] storage approvers = _approverList[wallet];
+        for (uint256 i = 0; i < approvers.length; ++i) {
+            delete _hasApproved[wallet][approvers[i]];
+        }
+        delete _approverList[wallet];
     }
 }

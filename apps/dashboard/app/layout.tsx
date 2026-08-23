@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: '/guardians', label: 'Guardians' },
   { href: '/recovery', label: 'Recovery' },
   { href: '/security', label: 'Security' },
+  { href: '/demo', label: 'Tx demo (local)' },
 ] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

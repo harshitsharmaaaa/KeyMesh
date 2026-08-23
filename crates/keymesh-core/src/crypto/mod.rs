@@ -53,7 +53,10 @@ pub struct PrivateKeyBytes(pub Vec<u8>);
 /// inputs rather than panicking; callers cannot be crashed into inconsistent
 /// states via malformed keys or messages.
 pub trait CryptoProvider {
-    fn generate_keypair(&self, curve: Curve) -> Result<(PrivateKeyBytes, PublicKeyBytes), KeymeshError>;
+    fn generate_keypair(
+        &self,
+        curve: Curve,
+    ) -> Result<(PrivateKeyBytes, PublicKeyBytes), KeymeshError>;
 
     fn public_key(&self, private_key: &PrivateKeyBytes) -> Result<PublicKeyBytes, KeymeshError>;
 
@@ -81,7 +84,10 @@ pub struct MockCryptoProvider;
 const MOCK_TAG: &[u8] = b"KEYMESH-MOCK-NOT-A-SIGNATURE";
 
 impl CryptoProvider for MockCryptoProvider {
-    fn generate_keypair(&self, _curve: Curve) -> Result<(PrivateKeyBytes, PublicKeyBytes), KeymeshError> {
+    fn generate_keypair(
+        &self,
+        _curve: Curve,
+    ) -> Result<(PrivateKeyBytes, PublicKeyBytes), KeymeshError> {
         // Deterministic fixture values; no entropy is consumed on purpose so
         // tests are reproducible.
         Ok((
@@ -99,9 +105,15 @@ impl CryptoProvider for MockCryptoProvider {
         Ok(PublicKeyBytes(vec![0x22; 33]))
     }
 
-    fn sign(&self, private_key: &PrivateKeyBytes, message: &[u8]) -> Result<SignatureBytes, KeymeshError> {
+    fn sign(
+        &self,
+        private_key: &PrivateKeyBytes,
+        message: &[u8],
+    ) -> Result<SignatureBytes, KeymeshError> {
         if private_key.0.is_empty() {
-            return Err(KeymeshError::CryptoOperationFailed("empty private key".into()));
+            return Err(KeymeshError::CryptoOperationFailed(
+                "empty private key".into(),
+            ));
         }
         let mut out = MOCK_TAG.to_vec();
         out.extend_from_slice(&(message.len() as u64).to_be_bytes());
@@ -116,7 +128,9 @@ impl CryptoProvider for MockCryptoProvider {
         signature: &SignatureBytes,
     ) -> Result<bool, KeymeshError> {
         if public_key.0.is_empty() {
-            return Err(KeymeshError::CryptoOperationFailed("empty public key".into()));
+            return Err(KeymeshError::CryptoOperationFailed(
+                "empty public key".into(),
+            ));
         }
         let expected = self.sign(&PrivateKeyBytes(vec![0x11; 32]), message)?;
         Ok(expected.0 == signature.0)

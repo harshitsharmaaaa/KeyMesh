@@ -24,7 +24,9 @@
   },
   "dependencies": {
     "@keymesh/protocol": "*",
-    "@keymesh/types": "*"
+    "@keymesh/types": "*",
+    "@noble/curves": "^1.8.0",
+    "viem": "^2"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

@@ -89,7 +89,12 @@ impl RecoveryRequest {
     /// Record a guardian approval. Duplicate approvals are idempotent no-ops.
     ///
     /// `now_seconds` is provided by the caller (clock injection).
-    pub fn approve(&mut self, guardian_id: impl Into<String>, weight: u32, now_seconds: u64) -> Result<(), KeymeshError> {
+    pub fn approve(
+        &mut self,
+        guardian_id: impl Into<String>,
+        weight: u32,
+        now_seconds: u64,
+    ) -> Result<(), KeymeshError> {
         match self.state {
             RecoveryState::Pending => {}
             other => {

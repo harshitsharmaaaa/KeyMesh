@@ -18,6 +18,8 @@ pub enum KeymeshError {
     ThresholdNotMet { required: usize, actual: usize },
     /// A timelock has not elapsed yet.
     TimelockActive { remaining_seconds: u64 },
+    /// A signed transaction's expiry has passed.
+    Expired { expiry: u64, now: u64 },
     /// The crypto provider rejected an operation or produced invalid output.
     CryptoOperationFailed(String),
 }
@@ -35,7 +37,10 @@ impl fmt::Display for KeymeshError {
                 write!(f, "threshold not met: required {required}, got {actual}")
             }
             KeymeshError::TimelockActive { remaining_seconds } => {
-                write!(f, "timelock active: {} seconds remaining", remaining_seconds)
+                write!(f, "timelock active: {remaining_seconds} seconds remaining")
+            }
+            KeymeshError::Expired { expiry, now } => {
+                write!(f, "transaction expired: expiry {expiry}, now {now}")
             }
             KeymeshError::CryptoOperationFailed(msg) => {
                 write!(f, "crypto operation failed: {msg}")
@@ -52,7 +57,10 @@ mod tests {
 
     #[test]
     fn display_messages_are_stable() {
-        let e = KeymeshError::ThresholdNotMet { required: 3, actual: 2 };
+        let e = KeymeshError::ThresholdNotMet {
+            required: 3,
+            actual: 2,
+        };
         assert_eq!(e.to_string(), "threshold not met: required 3, got 2");
 
         let e = KeymeshError::InvalidStateTransition {

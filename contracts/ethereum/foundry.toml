@@ -8,17 +8,14 @@ solc_version = "0.8.24"
 optimizer = true
 optimizer_runs = 200
 
-# Gas reporting is noise until contracts are implemented; keep it off by default.
-no_match_path = ""
-
 [profile.ci]
 fuzz = { runs = 256 }
 invariant = { runs = 64 }
 
-# OpenZeppelin (and other libraries) are installed into `lib/` via
-#   forge install OpenZeppelin/openzeppelin-contracts
-# and remapped here once adopted. The skeleton intentionally has no
-# third-party dependencies yet; see README.md for the dependency policy.
+# Dependencies are git submodules under lib/ (see .gitmodules at repo root):
+#   git submodule update --init --recursive
+# remappings.txt maps forge-std and @openzeppelin/contracts.
+
 [fmt]
 line_length = 100
 bracket_spacing = false

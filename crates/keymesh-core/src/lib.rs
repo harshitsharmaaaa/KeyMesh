@@ -26,8 +26,10 @@ pub mod policy;
 pub mod recovery;
 pub mod serialization;
 pub mod signing;
+pub mod transaction;
 
 pub use errors::KeymeshError;
+pub use transaction::{KeymeshTransaction, DOMAIN as TRANSACTION_DOMAIN};
 
 /// Protocol version of this core library.
 pub const PROTOCOL_VERSION: &str = "0.1.0";

@@ -34,8 +34,12 @@ impl SigningDomain {
 
 /// Signs domain-separated messages on behalf of key material it controls.
 pub trait SigningService {
-    fn sign_message(&self, key: &PrivateKeyBytes, domain: SigningDomain, payload: &[u8])
-        -> Result<SignatureBytes, KeymeshError>;
+    fn sign_message(
+        &self,
+        key: &PrivateKeyBytes,
+        domain: SigningDomain,
+        payload: &[u8],
+    ) -> Result<SignatureBytes, KeymeshError>;
 }
 
 /// Insecure mock signing service (test/local development only).
@@ -82,14 +86,21 @@ mod tests {
             .sign_message(&key, SigningDomain::RecoveryApproval, b"abc")
             .unwrap();
 
-        assert_ne!(tx_sig, rec_sig, "same payload under different domains must not collide");
+        assert_ne!(
+            tx_sig, rec_sig,
+            "same payload under different domains must not collide"
+        );
     }
 
     #[test]
     fn rejects_empty_keys() {
         let service = MockSigningService::default();
         let err = service
-            .sign_message(&PrivateKeyBytes(vec![]), SigningDomain::RecoveryApproval, b"x")
+            .sign_message(
+                &PrivateKeyBytes(vec![]),
+                SigningDomain::RecoveryApproval,
+                b"x",
+            )
             .unwrap_err();
         assert!(matches!(err, KeymeshError::CryptoOperationFailed(_)));
     }
