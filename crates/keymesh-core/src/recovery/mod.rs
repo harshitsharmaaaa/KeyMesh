@@ -127,6 +127,11 @@ impl RecoveryRequest {
     /// quorum must be non-zero and satisfiable by `active_guardian_count`,
     /// and the timelock must meet the protocol minimum (mirrors
     /// `MIN_TIMELOCK` = 1 hour on-chain).
+    ///
+    /// The argument count intentionally mirrors the on-chain initiation call
+    /// one-to-one so reviewers can diff the two; grouping into a struct would
+    /// hide that mapping, hence the clippy exemption.
+    #[allow(clippy::too_many_arguments)]
     pub fn initiate(
         id: u64,
         wallet: impl Into<String>,

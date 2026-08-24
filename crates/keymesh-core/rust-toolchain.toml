@@ -1,0 +1,6 @@
+# Deterministic Rust toolchain for keymesh-core, shared by local development
+# and CI (GitHub Actions). Matches the toolchain used to verify Phase 1.2.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
