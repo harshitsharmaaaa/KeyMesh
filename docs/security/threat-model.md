@@ -175,6 +175,55 @@ one.
 **Residual risk:** accepted; guardian reputation/monitoring is out of scope
 for Phase 1.2.
 
+### T15. Policy downgrade (Phase 1.3)
+
+**Scenario:** a stolen device weakens policy (raises threshold to max, clears
+restrictions) then drains freely.
+**Mitigations (enforced):** PolicyManager admin selectors are STRUCTURALLY
+classified DEVICE_PLUS_GUARDIANS — even for unconfigured wallets — so any
+policy mutation needs a guardian-approved transaction authorization bound to
+that exact digest. Direct EOA calls revert `UnauthorizedPolicyUpdate`.
+**Residual risk:** guardians colluding with the device can of course approve;
+that is T3.
+
+### T16. Guardian approval replay (Phase 1.3)
+
+**Scenario:** reuse one guardian's transaction approval for another transfer.
+**Defenses (enforced):** approvals are keyed by the canonical KEYMESH_TX_V1
+digest (wallet+chainId+nonce+to+value+data+expiry) plus defensive wallet
+binding; duplicate approvals revert `DuplicateApproval`; consumption flips
+status to Executed before the external call; nonce progression makes the old
+payload permanently invalid. Verified by Foundry tests (wrong digest, wrong
+wallet, replay) and Anvil integration step 12.
+
+### T17. Policy/version race (Phase 1.3)
+
+**Scenario:** policy changes mid-approval-lifecycle; attacker hopes old
+authorization still executes.
+**Defenses (enforced):** every config change bumps the per-wallet version;
+requests snapshot it at initiation and BOTH approval and consumption re-check
+it (`PolicyChanged`). Additionally each governed change consumes a wallet
+nonce, invalidating pre-change payloads at the nonce layer first. Deterministic
+outcome: pending authorizations are invalidated, never grandfathered.
+
+### T18. Restricted destination bypass (Phase 1.3)
+
+**Scenario:** send to a restricted destination below the value threshold,
+hoping only the value rule applies.
+**Defenses (enforced):** destination restrictions are checked INDEPENDENTLY of
+value in the precedence chain; zero-value transfers to restricted destinations
+still require full guardian authorization (integration step 15 covers both the
+rejection and the authorized path).
+
+### T19. Selector classification bypass (Phase 1.3)
+
+**Scenario:** evade a restricted selector using empty or short calldata.
+**Defenses (enforced):** selector rules require >= 4 bytes of calldata; empty
+or 1–3 byte payloads fall through to destination/value/default rules and can
+never match a restricted selector. PolicyManager's OWN admin selectors remain
+guarded even when the destination is the PolicyManager but calldata is short
+(such calls cannot invoke admin logic anyway).
+
 ## Out of scope
 
 - Compromise of the Ethereum consensus layer itself.
@@ -186,3 +235,4 @@ for Phase 1.2.
 
 Revisit this document whenever: a new contract deploys, the signing stack
 changes, a new chain adapter lands, or a dependency with privilege changes.
+

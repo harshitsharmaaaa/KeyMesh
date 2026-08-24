@@ -13,17 +13,21 @@ import { decodeErrorResult } from 'viem';
 export class ContractCallError extends KeymeshError {
   readonly contractFunction: string;
   readonly decoded: DecodedContractError | null;
+  /** Original error (with viem cause chain) for debugging undecoded reverts. */
+  readonly raw: unknown;
 
   constructor(
     message: string,
     code: string,
     contractFunction: string,
-    decoded?: DecodedContractError | null
+    decoded?: DecodedContractError | null,
+    raw?: unknown
   ) {
     super(message, code);
     this.name = 'ContractCallError';
     this.contractFunction = contractFunction;
     this.decoded = decoded ?? null;
+    this.raw = raw;
   }
 }
 
@@ -128,17 +132,24 @@ export function wrapContractError(err: unknown, context: string): Error {
     const data =
       (candidate as { data?: { data?: `0x${string}` } })?.data?.data ??
       (candidate as { data?: `0x${string}` })?.data;
-    if (typeof data !== 'string') continue;
-    const decoded = decodeContractError(data as `0x${string}`);
-    if (decoded) {
-      const argCount = Object.keys(decoded.args).length;
+    if (typeof data === 'string') {
+      const decoded = decodeContractError(data as `0x${string}`);
+      if (decoded) {
+        const argCount = Object.keys(decoded.args).length;
+        return new ContractCallError(
+          `${context}: ${decoded.errorName}${argCount ? ` (${stringifyArgs(decoded.args)})` : ''}`,
+          decoded.code,
+          context,
+          decoded
+        );
+      }
+      // Undecodable revert data still carries the raw selector; surface it.
       return new ContractCallError(
-        `${context}: ${decoded.errorName}${argCount ? ` (${stringifyArgs(decoded.args)})` : ''}`,
-        decoded.code,
-        context,
-        decoded
+        `${context}: unknown revert data ${data}`,
+        'CONTRACT_CALL_FAILED',
+        context
       );
     }
   }
-  return new ContractCallError(message, 'CONTRACT_CALL_FAILED', context);
+  return new ContractCallError(message, 'CONTRACT_CALL_FAILED', context, null, err);
 }

@@ -63,7 +63,7 @@ contract RecoveryManagerTest is Test {
     // ---------------------------------------------------------------
 
     function _newWallet(address initialDevice) internal returns (KeymeshWallet) {
-        return new KeymeshWallet(address(this), initialDevice, address(recovery));
+        return new KeymeshWallet(address(this), initialDevice, address(recovery), address(0));
     }
 
     function _bootstrapGuardians() internal returns (address[] memory guardians) {
@@ -208,7 +208,7 @@ contract RecoveryManagerTest is Test {
     function test_ManagerOfOtherWalletCannotBootstrap() public {
         // The manager of `wallet` cannot bootstrap a wallet managed by someone
         // else — bootstrap authority is strictly per-wallet.
-        KeymeshWallet foreign = new KeymeshWallet(stranger, stranger, address(recovery));
+        KeymeshWallet foreign = new KeymeshWallet(stranger, stranger, address(recovery), address(0));
         address[] memory guardians = _threeGuardians();
         vm.expectRevert(KeymeshErrors.Unauthorized.selector);
         recovery.bootstrapRecoveryGovernance(address(foreign), guardians, 1, TIMELOCK);

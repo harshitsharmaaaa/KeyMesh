@@ -88,6 +88,12 @@ bun run dev      # terminal 2
 - <http://localhost:3100/demo> - Phase 1.1: click **Run demo transaction**.
   The route (`app/api/keymesh-demo/route.ts`) deploys a fresh wallet, funds
   it, then drives create -> sign -> execute through `@keymesh/sdk`.
+- <http://localhost:3100/policies> - Phase 1.3: a live policy console backed
+  by `app/api/keymesh-policies/route.ts`. Configure policy through governed
+  administration (device proposes -> guardians approve -> wallet executes),
+  request/authorize/execute a high-value transfer bound to its exact digest,
+  and inspect version, thresholds, restrictions and approvals.
+
 - <http://localhost:3100/recovery> - Phase 1.2: a live guardian-recovery
   console backed by `app/api/keymesh-recovery/route.ts`. It deploys a fresh
   stack, registers guardians via bootstrap, and exposes real actions:
@@ -151,4 +157,5 @@ cargo fmt --check --manifest-path crates/keymesh-core/Cargo.toml
 forge build --root contracts/ethereum && forge test --root contracts/ethereum   # if contracts changed
 bun run integration:anvil                                                       # if SDK/contracts changed
 ```
+
 

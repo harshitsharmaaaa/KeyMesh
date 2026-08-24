@@ -1,6 +1,6 @@
 # KeyMesh Protocol Overview
 
-> **Status: Phases 1.1 + 1.2 implemented + design specification.** The
+> **Status: Phases 1.1-1.3 implemented + design specification.** The
 > device-signed Ethereum transaction path (see
 > [canonical-transaction.md](canonical-transaction.md)) AND guardian-governed
 > recovery with quorum + timelock (see [recovery.md](recovery.md)) are real.
@@ -86,4 +86,6 @@ vectors pin the transaction format in all three implementations.
   versioned domains (`KEYMESH_*_V1` pattern) before any of them is signed.
 
 See also: [wallet-lifecycle.md](wallet-lifecycle.md),
-[recovery.md](recovery.md), [transaction-policy.md](transaction-policy.md).
+[recovery.md](recovery.md), [policies.md](policies.md).
+
+

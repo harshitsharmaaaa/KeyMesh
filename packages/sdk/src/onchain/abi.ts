@@ -114,10 +114,66 @@ const recoveryManagerAbiItems = [
   'error Unauthorized()',
 ] as const;
 
+const policyManagerAbiItems = [
+  // configuration views
+  'function recoveryManager() view returns (address)',
+  'function MAX_RESTRICTED_DESTINATIONS() view returns (uint256)',
+  'function MAX_RESTRICTED_SELECTORS() view returns (uint256)',
+  'function policyOf(address wallet) view returns (uint8 defaultMode, uint256 valueThreshold, uint32 guardianApprovalsRequired, uint64 version)',
+  'function policyVersion(address wallet) view returns (uint64)',
+  'function isRestrictedDestination(address wallet, address destination) view returns (bool)',
+  'function isRestrictedSelector(address wallet, bytes4 selector) view returns (bool)',
+  'function evaluateAuthorization(address wallet, address to, uint256 value, bytes data) view returns (uint8)',
+  'function authorizationOf(bytes32 digest) view returns (address wallet, address requester, uint64 requestedAt, uint64 policyVersion, uint32 approvals, uint32 approvalsRequired, uint8 status)',
+  'function hasTransactionApproval(bytes32 digest, address guardian) view returns (bool)',
+  'function isAdminSelector(bytes4 selector) pure returns (bool)',
+  // configuration (wallet-governed; executed through KeymeshWallet.execute)
+  'function configurePolicy(address wallet, uint8 defaultMode, uint256 valueThreshold, uint32 guardianApprovalsRequired)',
+  'function setDefaultMode(address wallet, uint8 mode)',
+  'function setValueThreshold(address wallet, uint256 threshold)',
+  'function setTransactionQuorum(address wallet, uint32 guardianApprovalsRequired)',
+  'function setDestinationRestriction(address wallet, address destination, bool restricted)',
+  'function setSelectorRestriction(address wallet, bytes4 selector, bool restricted)',
+  // transaction authorization lifecycle
+  'function requestAuthorization(address wallet, bytes32 digest)',
+  'function approveTransaction(address wallet, bytes32 digest)',
+  'function cancelAuthorization(address wallet, bytes32 digest)',
+  'function consumeAuthorization(address wallet, bytes32 digest)',
+  // events
+  'event PolicyConfigured(address indexed wallet, uint8 defaultMode, uint256 valueThreshold, uint32 guardianApprovalsRequired, uint64 version)',
+  'event PolicyUpdated(address indexed wallet, uint64 indexed oldVersion, uint64 indexed newVersion)',
+  'event DestinationPolicyUpdated(address indexed wallet, address indexed destination, bool restricted, uint64 version)',
+  'event SelectorPolicyUpdated(address indexed wallet, bytes4 indexed selector, bool restricted, uint64 version)',
+  'event TransactionAuthorizationRequested(bytes32 indexed digest, address indexed wallet, address indexed requester, uint32 approvalsRequired, uint64 policyVersion)',
+  'event TransactionAuthorizationApproved(bytes32 indexed digest, address indexed wallet, address indexed guardian, uint32 approvalCount)',
+  'event TransactionAuthorizationQuorumReached(bytes32 indexed digest, address indexed wallet)',
+  'event TransactionAuthorizationCancelled(bytes32 indexed digest, address indexed wallet, address indexed by)',
+  'event TransactionAuthorizationExecuted(bytes32 indexed digest, address indexed wallet)',
+  // custom errors
+  'error UnauthorizedPolicyUpdate(address caller)',
+  'error AlreadyConfigured(address wallet)',
+  'error NotConfigured(address wallet)',
+  'error InvalidMode(uint8 mode)',
+  'error InvalidThreshold()',
+  'error InvalidGuardianApprovals(uint32 requested, uint32 guardianCount)',
+  'error RestrictedSetLimit(string kind, uint256 limit)',
+  'error RequesterNotDevice(address caller)',
+  'error NotRegisteredGuardian(address guardian)',
+  'error TransactionAuthorizationExists(bytes32 digest, uint8 status)',
+  'error TransactionAuthorizationNotFound(bytes32 digest)',
+  'error AuthorizationRequired(bytes32 digest)',
+  'error InsufficientGuardianApprovals(bytes32 digest, uint32 approvals, uint32 required)',
+  'error TransactionAuthorizationAlreadyApproved(address guardian)',
+  'error PolicyChanged(bytes32 digest, uint64 authorizedUnder, uint64 currentVersion)',
+  'error AuthorizationNotConsumable(bytes32 digest, uint8 status)',
+] as const;
+
 export const keymeshWalletAbi = parseAbi(keymeshWalletAbiItems);
 export const guardianRegistryAbi = parseAbi(guardianRegistryAbiItems);
 export const recoveryManagerAbi = parseAbi(recoveryManagerAbiItems);
+export const policyManagerAbi = parseAbi(policyManagerAbiItems);
 
 export type KeymeshWalletAbi = typeof keymeshWalletAbi;
 export type GuardianRegistryAbi = typeof guardianRegistryAbi;
 export type RecoveryManagerAbi = typeof recoveryManagerAbi;
+export type PolicyManagerAbi = typeof policyManagerAbi;

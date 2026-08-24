@@ -384,22 +384,31 @@ export async function deployKeymeshWallet(
 export interface KeymeshStackDeployInput {
   rpcUrl: string;
   chain: Chain;
-  /** Foundry artifacts for KeymeshWallet and RecoveryManager. */
+  /** Foundry artifacts for the contracts being deployed. */
   walletArtifact: { abi: unknown[]; bytecode: `0x${string}` };
   recoveryArtifact: { abi: unknown[]; bytecode: `0x${string}` };
+  /** Optional Phase 1.3 PolicyManager; wired into the wallet when supplied. */
+  policyArtifact?: { abi: unknown[]; bytecode: `0x${string}` };
   /** Deployer becomes the wallet's BOOTSTRAP-ONLY manager. */
   managerAccount: Account;
   initialDevice: Address;
 }
 
+export interface KeymeshStack {
+  recoveryAddress: Address;
+  registryAddress: Address;
+  policyAddress: Address | null;
+  walletAddress: Address;
+}
+
 /**
- * Deploys the Phase 1.2 stack: RecoveryManager (which constructs and owns its
- * GuardianRegistry) + KeymeshWallet pointed at it. Guardian bootstrap is left
- * to KeymeshRecoverySession.bootstrap so callers control quorum/timelock.
+ * Deploys the KeyMesh stack. The RecoveryManager constructs (and owns) its
+ * GuardianRegistry; when a PolicyManager artifact is supplied it is bound to
+ * the RecoveryManager (for guardian checks) and consulted by the wallet on
+ * every execution. Guardian bootstrap is left to the session classes so
+ * callers control quorum/timelock.
  */
-export async function deployKeymeshStack(
-  input: KeymeshStackDeployInput
-): Promise<{ recoveryAddress: Address; registryAddress: Address; walletAddress: Address }> {
+export async function deployKeymeshStack(input: KeymeshStackDeployInput): Promise<KeymeshStack> {
   const publicClient = createPublicClient({ chain: input.chain, transport: http(input.rpcUrl) });
   const walletClient = createWalletClient({
     account: input.managerAccount,
@@ -441,11 +450,17 @@ export async function deployKeymeshStack(
     ] as never,
     functionName: 'guardianRegistry',
   })) as Address;
+  let policyAddress: Address | null = null;
+  if (input.policyArtifact) {
+    policyAddress = await deploy(input.policyArtifact, [recoveryAddress]);
+  }
+
   const wallet = await deploy(input.walletArtifact, [
     input.managerAccount.address,
     input.initialDevice,
     recoveryAddress,
+    policyAddress ?? '0x0000000000000000000000000000000000000000',
   ]);
 
-  return { recoveryAddress, registryAddress, walletAddress: wallet };
+  return { recoveryAddress, registryAddress, policyAddress, walletAddress: wallet };
 }

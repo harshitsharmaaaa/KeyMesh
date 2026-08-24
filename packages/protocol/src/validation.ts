@@ -1,6 +1,6 @@
 import type { ZodError } from 'zod';
 import { GuardianSchema } from './guardian';
-import { PolicySchema } from './policy';
+import { PolicyConfigSchema } from './policy';
 import { RecoverySchema } from './recovery';
 import { TransactionRequestSchema } from './transaction';
 import { DeviceSchema, WalletSchema } from './wallet';
@@ -14,7 +14,7 @@ export {
   WalletSchema,
   GuardianSchema,
   RecoverySchema,
-  PolicySchema,
+  PolicyConfigSchema,
   TransactionRequestSchema,
 };
 
@@ -41,8 +41,8 @@ export function validateRecovery(input: unknown) {
   return parse<import('./recovery').Recovery>(RecoverySchema, input);
 }
 
-export function validatePolicy(input: unknown) {
-  return parse<import('./policy').Policy>(PolicySchema, input);
+export function validatePolicyConfig(input: unknown) {
+  return parse<import('./policy').PolicyConfig>(PolicyConfigSchema, input);
 }
 
 export function validateTransactionRequest(input: unknown) {

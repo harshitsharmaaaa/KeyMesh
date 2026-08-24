@@ -9,13 +9,16 @@ import {KeymeshWallet} from "../src/KeymeshWallet.sol";
 
 /// @notice Deploys the KeyMesh contract set to a local/test network and
 ///         bootstraps guardian recovery governance.
-/// @dev Phase 1.2 wiring:
-///       1. GuardianRegistry + RecoveryManager (the registry is owned by the
-///          RecoveryManager; the wallet trusts only the RecoveryManager).
-///       2. KeymeshWallet with the deployer as BOOTSTRAP-ONLY manager.
+/// @dev Phase 1.2 + 1.3 wiring:
+///       1. RecoveryManager (owns its GuardianRegistry) + PolicyManager
+///          (bound to the same RecoveryManager for guardian checks).
+///       2. KeymeshWallet trusting the RecoveryManager and consulting the
+///          PolicyManager on every execution.
 ///       3. `bootstrapRecoveryGovernance` installs the initial guardian set,
 ///          quorum, and timelock — this also permanently retires the
 ///          manager's authority over the device set.
+///       Policy configuration itself is opt-in afterwards: an unconfigured
+///      wallet behaves exactly like Phase 1.1 (device signature suffices).
 ///
 ///      Environment:
 ///       - DEPLOYER_PRIVATE_KEY   (required) funds and signs deployment.
@@ -48,8 +51,8 @@ contract Deploy is Script {
         // the storage/policy pairing can never be misconfigured.
         recovery = new RecoveryManager();
         registry = GuardianRegistry(address(recovery.guardianRegistry()));
-        policy = new PolicyManager();
-        wallet = new KeymeshWallet(manager, initialDevice, address(recovery));
+        policy = new PolicyManager(recovery);
+        wallet = new KeymeshWallet(manager, initialDevice, address(recovery), address(policy));
 
         recovery.bootstrapRecoveryGovernance({
             wallet: address(wallet),

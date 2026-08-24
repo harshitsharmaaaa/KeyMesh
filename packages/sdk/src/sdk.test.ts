@@ -109,7 +109,9 @@ describe('KeymeshClient (prototype, local state only)', () => {
   it('tracks transaction requests and approvals', async () => {
     const wallet = await km.createKeymeshWallet({ initialDevice: DEVICE });
     const policy = await km.getPolicy(wallet.id);
-    expect(policy.rules.find((r) => r.type === 'normal')?.threshold).toBe(1);
+    expect(policy.defaultMode).toBe('device_only');
+    expect(policy.guardianApprovalsRequired).toBe(2);
+    expect(policy.valueThresholdWei).toBe('1000000000000000000');
 
     const tx = await km.requestTransaction(wallet.id, {
       type: 'normal',
@@ -144,16 +146,23 @@ describe('KeymeshClient (prototype, local state only)', () => {
     ).rejects.toThrow(/active device/i);
   });
 
-  it('updates policy rules and previews thresholds', async () => {
+  it('updates policy config and previews classification', async () => {
     const wallet = await km.createKeymeshWallet({ initialDevice: DEVICE });
-    await km.policies.upsertRule(wallet.id, {
-      type: 'high_value',
-      threshold: 3,
+    await km.policies.update(wallet.id, {
       valueThresholdWei: '5000000000000000000',
+      guardianApprovalsRequired: 3,
     });
 
-    expect(await km.policies.requiredApprovals(wallet.id, 'high_value')).toBe(3);
-    expect(await km.policies.classifiesAsHighValue(wallet.id, 4n)).toBe(false);
-    expect(await km.policies.classifiesAsHighValue(wallet.id, BigInt(5e18))).toBe(true);
+    const updated = await km.getPolicy(wallet.id);
+    expect(updated.version).toBe(2); // any change bumps the version
+    expect(updated.valueThresholdWei).toBe('5000000000000000000');
+
+    const below = { to: `0x${'ab'.repeat(20)}` as const, valueWei: '4' };
+    const above = { to: `0x${'ab'.repeat(20)}` as const, valueWei: '6000000000000000000' };
+    expect(await km.policies.classify(wallet.id, below)).toBe('device_only');
+    expect(await km.policies.requiredGuardianApprovals(wallet.id, below)).toBe(0);
+
+    expect(await km.policies.classify(wallet.id, above)).toBe('device_plus_guardians');
+    expect(await km.policies.requiredGuardianApprovals(wallet.id, above)).toBe(3);
   });
 });

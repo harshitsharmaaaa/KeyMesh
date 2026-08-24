@@ -8,7 +8,7 @@
  * Not audited; not production custody; no TSS/MPC yet.
  */
 export { GuardianApi, type CreateGuardianInput } from './guardian';
-export { PolicyApi, type UpsertPolicyRuleInput } from './policy';
+export { PolicyApi, type UpdatePolicyConfigInput } from './policy';
 export { RecoveryApi, type StartRecoveryInput } from './recovery';
 export { TransactionApi, type RequestTransactionInput } from './transaction';
 export {
@@ -35,6 +35,7 @@ export {
 export {
   guardianRegistryAbi,
   keymeshWalletAbi,
+  policyManagerAbi,
   recoveryManagerAbi,
 } from './onchain/abi';
 export {
@@ -48,15 +49,24 @@ export {
   type InitiateRecoveryInput,
   type KeymeshRecoveryConfig,
 } from './onchain/recovery';
+export {
+  KeymeshPolicySession,
+  createKeymeshPolicySession,
+  type ConfigurePolicyInput,
+  type KeymeshPolicyConfig,
+  type PolicyTxInput,
+} from './onchain/policy';
 export { canonicalTransactionHex, hashKeymeshTransaction } from '@keymesh/protocol';
 
 import type {
+  AuthorizationMode,
   Device,
   Guardian,
   GuardianType,
-  Policy,
+  PolicyConfig,
   Recovery,
   RecoveryState,
+  TransactionAuthorizationStatus,
   TransactionRequest,
   TransactionType,
   Wallet,
@@ -74,7 +84,9 @@ export type {
   Device,
   Guardian,
   Recovery,
-  Policy,
+  PolicyConfig,
+  AuthorizationMode,
+  TransactionAuthorizationStatus,
   TransactionRequest,
   GuardianType,
   RecoveryState,
@@ -122,7 +134,7 @@ export class KeymeshClient {
     return this.recovery.start(walletId, input);
   }
 
-  getPolicy(walletId: string): Promise<Policy> {
+  getPolicy(walletId: string): Promise<PolicyConfig> {
     return this.policies.get(walletId);
   }
 }

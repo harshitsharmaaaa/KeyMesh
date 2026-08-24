@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IKeymeshWallet} from "./interfaces/IKeymeshWallet.sol";
+import {IPolicyManager} from "./interfaces/IPolicyManager.sol";
 import {KeymeshErrors} from "./KeymeshErrors.sol";
 import {KeymeshTx} from "./KeymeshTx.sol";
 
@@ -43,13 +44,23 @@ contract KeymeshWallet is IKeymeshWallet, ReentrancyGuard {
     /// @notice RecoveryManager contract allowed to apply finalized recoveries.
     address public immutable recoveryManager;
 
+    /// @notice Transaction authorization policy layer. May be address(0) to
+    ///         run with Phase 1.1 semantics (device signature suffices);
+    ///         production wiring always sets it.
+    address public immutable policyManager;
+
     bool private _recoveryInitialized;
 
     mapping(address device => bool) private _devices;
     uint256 private _deviceCount;
     uint256 private _nonce;
 
-    constructor(address manager_, address initialDevice, address recoveryManager_) {
+    constructor(
+        address manager_,
+        address initialDevice,
+        address recoveryManager_,
+        address policyManager_
+    ) {
         if (manager_ == address(0) || initialDevice == address(0) || recoveryManager_ == address(0))
         {
             revert KeymeshErrors.ZeroAddress();
@@ -60,6 +71,7 @@ contract KeymeshWallet is IKeymeshWallet, ReentrancyGuard {
         }
         manager = manager_;
         recoveryManager = recoveryManager_;
+        policyManager = policyManager_;
         _devices[initialDevice] = true;
         _deviceCount = 1;
         emit DeviceRegistered(initialDevice, uint64(block.timestamp));
@@ -196,6 +208,20 @@ contract KeymeshWallet is IKeymeshWallet, ReentrancyGuard {
         bytes32 digest = KeymeshTx.digest(wallet, chainId, nonce, to, value, data, expiry);
         address signer = ECDSA.recover(digest, signature); // reverts when malformed
         if (!_devices[signer]) revert UnauthorizedDevice(signer);
+
+        // Policy layer (Phase 1.3): a valid device signature is necessary but
+        // not automatically sufficient. Classification is deterministic; when
+        // guardians are required, an authorization bound to THIS exact digest
+        // must exist and is consumed here — before any external call — so a
+        // single approval can never execute twice.
+        if (policyManager != address(0)) {
+            if (
+                IPolicyManager(policyManager).evaluateAuthorization(address(this), to, value, data)
+                    == IPolicyManager.AuthorizationMode.DEVICE_PLUS_GUARDIANS
+            ) {
+                IPolicyManager(policyManager).consumeAuthorization(address(this), digest);
+            }
+        }
 
         // Effects before interaction: the nonce bump invalidates this exact
         // digest before control leaves the contract.

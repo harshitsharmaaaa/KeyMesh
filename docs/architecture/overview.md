@@ -1,6 +1,6 @@
 # KeyMesh Architecture Overview
 
-> **Status: Phases 1.1 + 1.2 implemented** — two real end-to-end paths
+> **Status: Phases 1.1-1.3 implemented** — two real end-to-end paths
 > (device-signed transactions AND guardian-quorum timelocked recovery with
 > device replacement) plus prototype scaffolding for everything else.
 > Components are labeled by maturity; nothing here is production-ready or
@@ -89,12 +89,12 @@ from a registered device's signature over the canonical digest.
 | KeymeshWallet         | experimental| device auth + replay/expiry guards + recovery application entry; works on Anvil |
 | RecoveryManager       | implemented (Phase 1.2) | guardian quorum + timelock + cancellation state machine, owns its GuardianRegistry |
 | GuardianRegistry      | implemented (Phase 1.2) | per-wallet unweighted guardian sets; mutated only by RecoveryManager |
-| SDK on-chain flow     | experimental| build/sign/execute session + KeymeshRecoverySession; not production custody |
+| SDK on-chain flow     | experimental| build/sign/execute + recovery & policy sessions; not production custody |
 | Domain models (TS)    | prototype   | Zod-validated models incl. on-chain recovery domain types  |
 | SDK local-state APIs  | prototype   | wallets/guardians/recovery over in-memory storage          |
 | Dashboard             | prototype   | mock pages + real server-side demo routes (/demo txs, /recovery guardian flow) |
-| Rust core             | prototype   | recovery FSM mirrors contract exactly + TX codec; mock crypto |
-| PolicyManager         | skeleton    | policy storage/tests; no enforcement path from execute()   |
+| Rust core             | prototype   | recovery/policy FSMs mirror contracts exactly + TX codec; mock crypto |
+| PolicyManager         | implemented (Phase 1.3) | deterministic classification + per-digest guardian transaction authorizations; enforced inside execute() |
 | Threshold signing/MPC | not started | later phase; recovery governance deliberately independent  |
 | Solana adapter        | not started | later phase; chain-kind abstraction already exists         |
 
@@ -135,6 +135,28 @@ Adding Solana later means: a new adapter implementation, an ed25519 provider,
 and Solana-specific contract programs — without redesigning wallets, policies,
 or recovery.
 
+## How a Phase 1.3 governed transaction flows
+
+```
+device signs the canonical digest of a high-value transfer
+    |
+KeymeshWallet.execute  domain/expiry/nonce/signature checks
+    |
+PolicyManager.evaluateAuthorization  deterministic precedence:
+    |   admin selector > restricted selector > restricted destination
+    |   > value threshold > default mode
+DEVICE_PLUS_GUARDIANS?
+    |-- no --> execute immediately (effects-first, nonce consumed)
+    |-- yes -> consume per-digest authorization (must be Authorized,
+    |          created by a device request and approved by the guardian
+    |          quorum; version-checked against the current policy)
+    v
+external call + TransactionExecuted
+```
+
+Policy ADMINISTRATION is itself guardian-gated structurally: mutating
+PolicyManager always classifies DEVICE_PLUS_GUARDIANS, so a single device can
+never weaken policy.
 ## Trust model summary
 
 Full details: [security/security-model.md](../security/security-model.md) and
@@ -152,3 +174,5 @@ Full details: [security/security-model.md](../security/security-model.md) and
   timelocked guardian quorum. Taking over faster than the timelock allows
   would require breaking both layers at once. The protocol still does NOT
   protect funds against an actively compromised device.
+
+

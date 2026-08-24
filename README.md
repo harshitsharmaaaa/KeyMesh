@@ -4,7 +4,7 @@
 > recovery — using threshold-style cryptography, guardian quorums, and
 > timelocked recovery. Ethereum-first.
 
-**Status: Phases 1.1 + 1.2 implemented; prototype overall.** Two real
+**Status: Phases 1.1-1.3 implemented; prototype overall.** Two real
 end-to-end paths exist: device-signed transactions (SDK -> canonical
 `KEYMESH_TX_V1` encoding -> keccak digest -> ECDSA device signature ->
 Solidity recovery -> execution on local Anvil) and guardian-governed recovery
@@ -180,8 +180,8 @@ See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 2. Guardian system + guardian-quorum recovery with timelock, wired across
    TS/Rust/Solidity; manager reduced to bootstrap-only authority - done,
    Phase 1.2
-3. Transaction policy enforcement on-chain (class thresholds via PolicyManager)
-   - next, Phase 1.3
+3. ~~Transaction policy engine: value thresholds, destination/selector rules,
+   guardian per-digest transaction authorizations~~ - done, Phase 1.3
 4. Testing: property/fuzz suites, invariant tests, coverage gates
 
 **Phase 2 - Advanced cryptography & multi-chain**
@@ -192,6 +192,7 @@ See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 ## License
 
 MIT OR Apache-2.0 (to be finalized).
+
 
 
 

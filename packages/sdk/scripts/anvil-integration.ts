@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { KeymeshTransaction } from '@keymesh/protocol';
+import { type KeymeshTransaction, hashKeymeshTransaction } from '@keymesh/protocol';
 import {
   http,
   createPublicClient,
@@ -29,6 +29,7 @@ import type { PublicClient } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import {
+  createKeymeshPolicySession,
   createKeymeshRecoverySession,
   createKeymeshSession,
   deployKeymeshStack,
@@ -170,6 +171,7 @@ async function main(): Promise<void> {
     requireStep(build.status === 0, `forge build failed (status ${build.status})`);
     const walletArtifact = await loadArtifact('KeymeshWallet');
     const recoveryArtifact = await loadArtifact('RecoveryManager');
+    const policyArtifact = await loadArtifact('PolicyManager');
 
     const manager = privateKeyToAccount(MANAGER_KEY);
     const deviceA = privateKeyToAccount(DEVICE_A_KEY); // initial device ("stolen" later)
@@ -190,9 +192,15 @@ async function main(): Promise<void> {
       chain,
       walletArtifact: { abi: walletArtifact.abi, bytecode: walletArtifact.bytecode.object },
       recoveryArtifact: { abi: recoveryArtifact.abi, bytecode: recoveryArtifact.bytecode.object },
+      policyArtifact: { abi: policyArtifact.abi, bytecode: policyArtifact.bytecode.object },
       managerAccount: manager,
       initialDevice: deviceA.address,
     });
+    log(
+      'deploy',
+      `wallet ${stack.walletAddress}, recovery ${stack.recoveryAddress}, policy ${String(stack.policyAddress)}, registry ${stack.registryAddress}`
+    );
+    requireStep(stack.policyAddress !== null, 'policy layer must be wired');
     log(
       'deploy',
       `KeymeshWallet ${stack.walletAddress}, RecoveryManager ${stack.recoveryAddress}, GuardianRegistry ${stack.registryAddress}`
@@ -495,8 +503,213 @@ async function main(): Promise<void> {
     }
     requireStep(finalizeReplayRejected, 'executed recovery must never execute again');
 
+    // ===============================================================
+    // Phase 1.3: transaction authorization policies
+    // ===============================================================
+    requireStep(stack.policyAddress !== null, 'policy address required');
+    const policySession = createKeymeshPolicySession({
+      walletAddress: stack.walletAddress,
+      policyAddress: stack.policyAddress as Address,
+      chain,
+      rpcUrl: RPC_URL,
+      governanceDevicePrivateKey: DEVICE_C_KEY,
+      relayerAccount: manager,
+    });
+
+    // 1. create normal policy through governed administration (structural
+    //    anti-downgrade rule: admin calls need guardian authorization).
+    //    Bootstrap semantics: the wallet's policy is still unconfigured, so
+    //    the request quorum clamps to ONE guardian for this first change;
+    //    afterwards the configured quorum (2) applies to all further changes.
+    const configureInput = {
+      defaultMode: 'device_only' as const,
+      valueThresholdWei: '500000000000000000', // 0.5 ETH
+      guardianApprovalsRequired: 2,
+    };
+    let changeDigest: `0x${string}`;
+    const configureProposal = await policySession.proposeConfigurePolicy(configureInput);
+    changeDigest = configureProposal.digest;
+    await policySession.approveTransaction(guardian1, changeDigest);
+    await policySession.executeConfigurePolicy(configureInput, configureProposal);
+
+    // 14 (partial). verify policy version behavior
+    let cfg = await policySession.getPolicyConfig();
+    requireStep(cfg.version === 1, `policy version should be 1 (got ${cfg.version})`);
+    requireStep(cfg.valueThresholdWei === '500000000000000000');
+    log(
+      'policy',
+      `configured v${cfg.version}: threshold ${formatEther(BigInt(cfg.valueThresholdWei))} ETH, quorum ${cfg.guardianApprovalsRequired}`
+    );
+
+    // 2. low-value transaction executes with device signature only
+    const lowBefore = await client.getBalance({ address: guardian1.address });
+    const lowRequest = await newDeviceSession.createTransaction({
+      to: guardian1.address,
+      value: 10n ** 17n, // 0.1 ETH < threshold
+      nowSeconds: await chainNow(client),
+    });
+    const lowResult = await newDeviceSession.execute(newDeviceSession.signTransaction(lowRequest));
+    requireStep(lowResult.status === 'success', 'low-value device-only execution must succeed');
+    const lowAfter = await client.getBalance({ address: guardian1.address });
+    requireStep(lowAfter === lowBefore + 10n ** 17n, 'recipient state changed');
+    log('execute', `device-only tx ${lowResult.txHash} (0.1 ETH)`);
+
+    // 3-4. high-value transaction rejected without guardian authorization
+    const highValue = 700000000000000000n; // 0.7 ETH > threshold
+    const highRequest = await newDeviceSession.createTransaction({
+      to: guardian2.address,
+      value: highValue,
+      nowSeconds: await chainNow(client),
+    });
+    const highSigned = newDeviceSession.signTransaction(highRequest);
+    let deviceOnlyRejected = false;
+    try {
+      await client.call({
+        account: manager.address,
+        to: stack.walletAddress,
+        data: executeCalldata(highSigned.transaction, highSigned.signature),
+      });
+    } catch (err) {
+      deviceOnlyRejected = true;
+      log('policy', `high-value without approval rejected (${shortReason(err)})`);
+    }
+    requireStep(deviceOnlyRejected, 'device-only must NOT satisfy a guardian-gated transfer');
+
+    // 5. transaction authorization request bound to the exact digest
+    await policySession.requestAuthorizationForDigest(deviceC, highSigned.digest);
+    let auth = await policySession.getAuthorization(highSigned.digest);
+    requireStep(auth?.status === 'pending', 'request should be pending');
+
+    // 6-8. guardian approvals reach the quorum
+    await policySession.approveTransaction(guardian1, highSigned.digest);
+    await policySession.approveTransaction(guardian2, highSigned.digest);
+    auth = await policySession.getAuthorization(highSigned.digest);
+    requireStep(auth?.status === 'authorized' && auth.approvals === 2, 'quorum reached');
+    log('authorize', `digest ${highSigned.digest.slice(0, 10)}... approved 2/2`);
+
+    // 9-10. execute and verify state change (baseline captured right before
+    // executing so the guardians' own approval gas doesn't skew the delta).
+    const highBeforeExec = await client.getBalance({ address: guardian2.address });
+    const exec = await newDeviceSession.execute(highSigned);
+    requireStep(exec.status === 'success', 'authorized high-value execution must succeed');
+    requireStep(
+      (await client.getBalance({ address: guardian2.address })) === highBeforeExec + highValue,
+      'state change verified'
+    );
+    log('execute', `guardian-approved tx ${exec.txHash} (${formatEther(highValue)} ETH)`);
+
+    // 11-12. replay same authorization -> rejection
+    let authReplayRejected = false;
+    try {
+      await client.call({
+        account: manager.address,
+        to: stack.walletAddress,
+        data: executeCalldata(highSigned.transaction, highSigned.signature),
+      });
+    } catch (err) {
+      authReplayRejected = true;
+      log('no-replay', `authorization replay rejected (${shortReason(err)})`);
+    }
+    requireStep(authReplayRejected, 'consumed authorization must never re-execute');
+
+    // 13-14. governed threshold change bumps version; stale approvals die
+    const newThreshold = '100000000000000000'; // 0.1 ETH
+    const thresholdProposal = await policySession.proposeSetValueThreshold(newThreshold);
+    changeDigest = thresholdProposal.digest;
+    await policySession.approveTransaction(guardian1, changeDigest);
+    await policySession.approveTransaction(guardian2, changeDigest);
+    await policySession.executeSetValueThreshold(newThreshold, thresholdProposal);
+    cfg = await policySession.getPolicyConfig();
+    requireStep(cfg.version === 2 && cfg.valueThresholdWei === newThreshold);
+
+    // A request created under v2 is still pending when ANOTHER governed
+    // change bumps to v3: its remaining approval must then fail.
+    const staleTx = await newDeviceSession.createTransaction({
+      to: guardian1.address,
+      value: 150000000000000000n, // 0.15 ETH > new threshold
+      nowSeconds: await chainNow(client),
+    });
+    const staleDigest = hashKeymeshTransaction(staleTx);
+    await policySession.requestAuthorizationForDigest(deviceC, staleDigest);
+    await policySession.approveTransaction(guardian1, staleDigest);
+
+    // Another governed change bumps to v3; the v2 request becomes invalid.
+    const tightenProposal = await policySession.proposeSetDestinationRestriction(
+      manager.address, // unrestricted destination: rule change is a no-op
+      false
+    );
+    await policySession.approveTransaction(guardian1, tightenProposal.digest);
+    await policySession.approveTransaction(guardian2, tightenProposal.digest);
+    await policySession.executeSetDestinationRestriction(manager.address, false, tightenProposal);
+
+    let staleApprovalRejected = false;
+    try {
+      await policySession.approveTransaction(guardian2, staleDigest);
+    } catch (err) {
+      staleApprovalRejected = true;
+      log('versioning', `stale-request approval rejected (${shortReason(err)})`);
+    }
+    requireStep(staleApprovalRejected, 'policy change must invalidate stale requests');
+
+    // New classification applies immediately: 0.02 ETH now needs guardians.
+    const tiny = await newDeviceSession.createTransaction({
+      to: guardian3.address,
+      value: 20000000000000000n, // 0.02 ETH > 0.01 threshold
+      nowSeconds: await chainNow(client),
+    });
+    const tinyDigest = hashKeymeshTransaction(tiny);
+    await policySession.requestAuthorizationForDigest(deviceC, tinyDigest);
+    await policySession.approveTransaction(guardian1, tinyDigest);
+    await policySession.approveTransaction(guardian2, tinyDigest);
+    const tinyExec = await newDeviceSession.execute(newDeviceSession.signTransaction(tiny));
+    requireStep(tinyExec.status === 'success', 'new-threshold guarded flow executes');
+    log(
+      'policy',
+      `new threshold active: 0.02 ETH required guardians (v${(await policySession.getPolicyConfig()).version})`
+    );
+
+    // 15. restricted destination requires stronger authorization
+    const restrictedAddr = guardian3.address;
+    const restrictProposal = await policySession.proposeSetDestinationRestriction(
+      restrictedAddr,
+      true
+    );
+    await policySession.approveTransaction(guardian1, restrictProposal.digest);
+    await policySession.approveTransaction(guardian2, restrictProposal.digest);
+    await policySession.executeSetDestinationRestriction(restrictedAddr, true, restrictProposal);
+    requireStep(await policySession.isRestrictedDestination(restrictedAddr));
+    requireStep(await policySession.isRestrictedDestination(restrictedAddr));
+
+    const zeroToRestricted = await newDeviceSession.createTransaction({
+      to: restrictedAddr,
+      value: 0n,
+      nowSeconds: await chainNow(client),
+    });
+    let restrictedRejected = false;
+    try {
+      await client.call({
+        account: manager.address,
+        to: stack.walletAddress,
+        data: executeCalldata(zeroToRestricted.transaction, zeroToRestricted.signature),
+      });
+    } catch (err) {
+      restrictedRejected = true;
+      log('destination', `restricted destination rejected without guardians (${shortReason(err)})`);
+    }
+    requireStep(restrictedRejected, 'restricted destination must require guardians');
+
+    const zeroRestrictedDigest = hashKeymeshTransaction(zeroToRestricted);
+    await policySession.requestAuthorizationForDigest(deviceC, zeroRestrictedDigest);
+    await policySession.approveTransaction(guardian1, zeroRestrictedDigest);
+    await policySession.approveTransaction(guardian2, zeroRestrictedDigest);
+    const restrictedExec = await newDeviceSession.execute(
+      newDeviceSession.signTransaction(zeroToRestricted)
+    );
+    requireStep(restrictedExec.status === 'success', 'restricted flow executes when authorized');
+    log('destination', 'restricted destination executed under full authorization');
+
     console.log(
-      '\nINTEGRATION PASS: guardian quorum -> timelocked recovery -> device replacement verified on Anvil.'
+      '\nINTEGRATION PASS: policies + guardian transaction authorization + recovery verified on Anvil.'
     );
   } finally {
     anvil?.kill();
@@ -504,6 +717,31 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
+  const dump = (e: unknown, depth = 0): unknown => {
+    if (depth > 4 || e === null || typeof e !== 'object') return e;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(e as Record<string, unknown>)) {
+      if (
+        [
+          'message',
+          'shortMessage',
+          'name',
+          'details',
+          'raw',
+          'data',
+          'args',
+          'version',
+          'docsPath',
+        ].includes(k)
+      ) {
+        out[k] = typeof v === 'object' && v !== null ? '[obj]' : v;
+      }
+    }
+    if ((e as { cause?: unknown }).cause !== undefined)
+      out.cause = dump((e as { cause: unknown }).cause, depth + 1);
+    return out;
+  };
+  console.error('\nDEEP ERROR:', JSON.stringify(dump(err), null, 2).slice(0, 2500));
   if (err instanceof StepFailure) {
     console.error(`\nINTEGRATION FAIL: ${err.message}`);
   } else {

@@ -49,6 +49,10 @@ interface IKeymeshWallet {
     ///         {initializeRecoveryGovernance} (the RecoveryManager contract).
     function recoveryManager() external view returns (address);
 
+    /// @notice Transaction authorization policy layer consulted by execute();
+    ///         address(0) disables the policy layer (Phase 1.1 semantics).
+    function policyManager() external view returns (address);
+
     /// @notice True once guardian recovery governance has been bootstrapped;
     ///         afterwards the bootstrap manager holds no authority.
     function recoveryInitialized() external view returns (bool);

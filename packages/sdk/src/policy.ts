@@ -1,71 +1,87 @@
 import {
-  type Policy,
-  type PolicyRule,
-  type TransactionType,
-  createPolicy,
-  getThreshold,
-  isHighValue,
-  updateRule,
+  AUTHORIZATION_MODES,
+  type AuthorizationMode,
+  type ClassificationInput,
+  POLICY_CONFIG_EXAMPLE,
+  type PolicyConfig,
+  classifyTransaction,
+  effectiveRequestQuorum,
 } from '@keymesh/protocol';
 import { NotFoundError } from '@keymesh/types';
 import type { WalletStorage } from './client';
 
-export interface UpsertPolicyRuleInput {
-  type: TransactionType;
-  threshold: number;
-  timelockHours?: number;
+export interface UpdatePolicyConfigInput {
+  defaultMode?: AuthorizationMode;
+  /** Wei as a decimal string (JSON-safe uint256). */
   valueThresholdWei?: string;
+  guardianApprovalsRequired?: number;
 }
 
 /**
- * Policies are evaluated locally in the prototype. The PolicyManager contract
- * becomes the enforcement point in Phase 1; the evaluation helpers are shared
- * so client-side preview and on-chain enforcement cannot drift.
+ * Local prototype policy store. The PolicyManager CONTRACT is the
+ * authoritative enforcement point (Phase 1.3); this API mirrors its
+ * configuration model and reuses the shared classification helper so a
+ * client-side preview cannot drift from on-chain semantics.
  */
 export class PolicyApi {
-  private readonly policies = new Map<string, Policy>();
+  private readonly policies = new Map<string, PolicyConfig>();
 
   constructor(private readonly storage: WalletStorage) {}
 
-  async ensureForWallet(walletId: string): Promise<Policy> {
+  async ensureForWallet(walletId: string): Promise<PolicyConfig> {
     const wallet = await this.storage.get(walletId);
     if (!wallet) throw new NotFoundError('Wallet', walletId);
 
-    const existing = this.policies.get(wallet.policyId);
+    const existing = this.policies.get(walletId);
     if (existing) return existing;
 
-    const policy = createPolicy({
-      id: wallet.policyId,
-      walletId,
-      name: 'Default policy',
-    });
-    this.policies.set(policy.id, policy);
+    // Prototype default mirrors docs/protocol/policies.md suggestions:
+    // device-only default, 1 ETH threshold, two guardian approvals.
+    const policy: PolicyConfig = { ...POLICY_CONFIG_EXAMPLE };
+    this.policies.set(walletId, policy);
     return policy;
   }
 
-  async get(walletId: string): Promise<Policy> {
+  async get(walletId: string): Promise<PolicyConfig> {
     return this.ensureForWallet(walletId);
   }
 
-  async upsertRule(walletId: string, input: UpsertPolicyRuleInput): Promise<Policy> {
-    const policy = await this.get(walletId);
-    const rule: PolicyRule = {
-      type: input.type,
-      threshold: input.threshold,
-      timelockHours: input.timelockHours,
-      valueThresholdWei: input.valueThresholdWei,
+  async update(walletId: string, input: UpdatePolicyConfigInput): Promise<PolicyConfig> {
+    const current = await this.get(walletId);
+    const updated: PolicyConfig = {
+      defaultMode: input.defaultMode ?? current.defaultMode,
+      valueThresholdWei: input.valueThresholdWei ?? current.valueThresholdWei,
+      guardianApprovalsRequired:
+        input.guardianApprovalsRequired ?? current.guardianApprovalsRequired,
+      version: current.version + 1, // any change bumps the version
     };
-    const updated = updateRule(policy, rule);
-    this.policies.set(updated.id, updated);
+    this.policies.set(walletId, updated);
     return updated;
   }
 
-  /** Preview-only evaluation. On-chain enforcement is authoritative once shipped. */
-  async requiredApprovals(walletId: string, type: TransactionType): Promise<number> {
-    return getThreshold(await this.get(walletId), type);
+  /** Preview-only classification. On-chain evaluation is authoritative. */
+  async classify(walletId: string, tx: ClassificationInput): Promise<AuthorizationMode> {
+    const config = await this.get(walletId);
+    return classifyTransaction(
+      config,
+      {
+        toIsPolicyManagerWithAdminSelector: false, // local preview has no contract address
+        selectorRestricted: false,
+        destinationRestricted: false,
+      },
+      tx
+    );
   }
 
-  async classifiesAsHighValue(walletId: string, valueWei: bigint): Promise<boolean> {
-    return isHighValue(await this.get(walletId), valueWei);
+  /**
+   * Guardian approvals required for `tx` under the local policy preview;
+   * zero when the classification is device-only.
+   */
+  async requiredGuardianApprovals(walletId: string, tx: ClassificationInput): Promise<number> {
+    const mode = await this.classify(walletId, tx);
+    if (mode === AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS) {
+      return effectiveRequestQuorum(await this.get(walletId));
+    }
+    return 0;
   }
 }

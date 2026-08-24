@@ -15,7 +15,7 @@ import {
   encodeFunctionData,
 } from 'viem';
 import { waitForTransactionReceipt } from 'viem/actions';
-import { guardianRegistryAbi, keymeshWalletAbi, recoveryManagerAbi } from './abi';
+import { guardianRegistryAbi, keymeshWalletAbi, policyManagerAbi, recoveryManagerAbi } from './abi';
 import { signDigestWithDeviceKey } from './client';
 import { registerDecoderAbis, wrapContractError } from './errors';
 
@@ -180,7 +180,12 @@ export class KeymeshRecoverySession {
     this.governanceDevicePrivateKey = config.governanceDevicePrivateKey ?? null;
 
     if (!decoderRegistered) {
-      registerDecoderAbis(keymeshWalletAbi, recoveryManagerAbi, guardianRegistryAbi);
+      registerDecoderAbis(
+        keymeshWalletAbi,
+        recoveryManagerAbi,
+        guardianRegistryAbi,
+        policyManagerAbi
+      );
       decoderRegistered = true;
     }
   }

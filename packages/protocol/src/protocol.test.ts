@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { RECOVERY_STATES } from './constants';
 import { createGuardian, getGuardianWeight, meetsThreshold, totalActiveWeight } from './guardian';
-import { DEFAULT_RULES, createPolicy, getThreshold, isHighValue, requiresTimelock } from './policy';
+import {
+  AUTHORIZATION_MODES,
+  POLICY_CONFIG_EXAMPLE,
+  PolicyConfigSchema,
+  TXN_AUTHORIZATION_STATUSES,
+  TransactionAuthorizationSchema,
+  classifyTransaction,
+  effectiveRequestQuorum,
+  isAuthorizationVersionValid,
+} from './policy';
 import {
   approveRecovery,
   canApproveRecovery,
@@ -100,18 +109,139 @@ describe('recovery state machine', () => {
 });
 
 describe('policy evaluation', () => {
-  it('applies default thresholds per transaction class', () => {
-    const policy = createPolicy({
-      id: crypto.randomUUID(),
-      walletId: crypto.randomUUID(),
-      name: 'default',
-    });
-    expect(policy.rules).toEqual(DEFAULT_RULES);
-    expect(getThreshold(policy, 'normal')).toBe(1);
-    expect(getThreshold(policy, 'high_value')).toBe(2);
-    expect(requiresTimelock(policy, 'recovery')).toBe(true);
-    expect(isHighValue(policy, BigInt('1000000000000000000'))).toBe(true);
-    expect(isHighValue(policy, 1n)).toBe(false);
+  it('validates policy configs and authorization schemas', () => {
+    expect(PolicyConfigSchema.safeParse(POLICY_CONFIG_EXAMPLE).success).toBe(true);
+    expect(
+      PolicyConfigSchema.safeParse({
+        ...POLICY_CONFIG_EXAMPLE,
+        defaultMode: 'guardian_only', // not a Phase 1.3 mode
+      }).success
+    ).toBe(false);
+    expect(
+      TransactionAuthorizationSchema.safeParse({
+        digest: `0x${'ab'.repeat(32)}`,
+        wallet: `0x${'11'.repeat(20)}`,
+        requester: `0x${'22'.repeat(20)}`,
+        requestedAt: 1_900_000_000,
+        policyVersion: 1,
+        approvals: 1,
+        approvalsRequired: 2,
+        status: TXN_AUTHORIZATION_STATUSES.PENDING,
+      }).success
+    ).toBe(true);
+  });
+
+  it('classifies by precedence: admin rule, selector, destination, value, default', () => {
+    const config = POLICY_CONFIG_EXAMPLE; // threshold 1 ETH, default device-only
+
+    // 4. value strictly above threshold.
+    expect(
+      classifyTransaction(
+        config,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: false,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: (10n ** 18n + 1n).toString() }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS);
+
+    // Boundary is inclusive to the default rule.
+    expect(
+      classifyTransaction(
+        config,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: false,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: (10n ** 18n).toString(), data: '0x' }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_ONLY);
+
+    // 3. restricted destination regardless of value.
+    expect(
+      classifyTransaction(
+        config,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: false,
+          destinationRestricted: true,
+        },
+        { to: ADDR, valueWei: '0' }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS);
+
+    // 2. restricted selector; empty calldata never matches selectors.
+    const data = `0x${'deadbeef'}01`;
+    expect(
+      classifyTransaction(
+        config,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: true,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: '0', data }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS);
+    expect(
+      classifyTransaction(
+        config,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: true,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: '0', data: '0x' }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_ONLY);
+    expect(
+      classifyTransaction(
+        config,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: true,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: '0', data: '0x123456' }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_ONLY);
+
+    // 1. structural admin rule holds even for unconfigured wallets.
+    const unconfigured = { ...POLICY_CONFIG_EXAMPLE, version: 0 };
+    expect(
+      classifyTransaction(
+        unconfigured,
+        {
+          toIsPolicyManagerWithAdminSelector: true,
+          selectorRestricted: true,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: '0', data }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS);
+    expect(
+      classifyTransaction(
+        unconfigured,
+        {
+          toIsPolicyManagerWithAdminSelector: false,
+          selectorRestricted: false,
+          destinationRestricted: false,
+        },
+        { to: ADDR, valueWei: '5' }
+      )
+    ).toBe(AUTHORIZATION_MODES.DEVICE_ONLY);
+  });
+
+  it('never allows a zero request quorum and invalidates on version change', () => {
+    expect(effectiveRequestQuorum(POLICY_CONFIG_EXAMPLE)).toBe(2);
+    expect(effectiveRequestQuorum({ ...POLICY_CONFIG_EXAMPLE, guardianApprovalsRequired: 0 })).toBe(
+      1
+    );
+    expect(isAuthorizationVersionValid(1, 1)).toBe(true);
+    expect(isAuthorizationVersionValid(1, 2)).toBe(false);
   });
 });
 

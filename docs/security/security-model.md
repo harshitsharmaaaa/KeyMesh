@@ -15,9 +15,11 @@
 | Transaction mutation after signing            | canonical encoding covers every field       | yes (Phase 1.1, cross-language vectors) |
 | Unauthorized key authorizing a transfer        | on-chain device set + ECDSA recovery         | yes (Phase 1.1, single-key devices only) |
 | Reentrancy during execution                   | OpenZeppelin ReentrancyGuard + effects-before-interaction | yes (Phase 1.1) |
-| Single lost/stolen device draining a wallet   | high-value guardian quorum                  | NO — design only; a stolen device key can drain today |
+| Single lost/stolen device draining a wallet   | value threshold + guardian co-approval      | PARTIAL (Phase 1.3): applies only to wallets that CONFIGURE a threshold; unconfigured wallets stay device-only |
 | Loss of ALL devices                           | guardian recovery with timelock             | YES (Phase 1.2): `replacedDevice = 0` adds a fresh device after quorum + timelock |
 | Hostile recovery takeover                     | mandatory ≥1h timelock + device cancellation | YES (Phase 1.2, RecoveryManager) |
+| Stolen device weakening policy to bypass approvals | structural admin rule: policy mutations always need guardian co-approval | YES (Phase 1.3, tested) |
+| Guardian approval reused for a different transfer | per-digest binding + single consumption | YES (Phase 1.3) |
 | Stolen/compromised device keeping authority   | guardian quorum → timelock → atomic replacement | YES (Phase 1.2): old device revoked at finalization |
 | Manager backdoor after initialization          | bootstrap-only role; `ManagerAuthorityRetired` on every manager path | YES (Phase 1.2, tested) |
 | Guardian moving funds / signing transactions   | guardians can only initiate/approve recoveries of their own wallet | YES (Phase 1.2) |
@@ -48,6 +50,12 @@
   keccak-256 digest → ECDSA device signature (@noble/curves secp256k1,
   deterministic RFC-6979 nonces, low-s) → Solidity `ECDSA.recover` → device /
   nonce / expiry / domain validation → execution on local Anvil.
+- **Phase 1.3 works end-to-end**: deterministic policy classification inside
+  `execute()` (value threshold, restricted destinations/selectors), guardian
+  transaction authorizations bound to the exact canonical digest, policy
+  versioning that invalidates pending authorizations on any change, and a
+  structural anti-downgrade rule making every policy mutation require guardian
+  co-approval. Verified by Foundry tests and Anvil integration steps.
 - **Phase 1.2 works end-to-end**: guardian bootstrap (manager bootstraps once,
   then its authority is permanently retired) → recovery request by guardian or
   device → duplicate-proof guardian approvals → quorum detection → mandatory
@@ -135,3 +143,5 @@ their tests* — not to production readiness.
 - Every guarantee above is falsifiable by tests; where a guarantee is not yet
   testable end-to-end, it is marked "pending" or "design only" rather than
   implied.
+
+

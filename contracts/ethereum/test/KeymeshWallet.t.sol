@@ -74,7 +74,7 @@ contract KeymeshWalletTest is Test {
         registry = GuardianRegistry(address(recovery.guardianRegistry()));
         // The wallet only needs its nonzero recovery-manager pointer here; the
         // full governance flow is exercised in RecoveryManager.t.sol.
-        wallet = new KeymeshWallet(address(this), device, address(recovery));
+        wallet = new KeymeshWallet(address(this), device, address(recovery), address(0));
         counter = new Counter();
         reverter = new Reverter();
         deal(address(wallet), 10 ether);
@@ -380,7 +380,7 @@ contract KeymeshWalletGovernanceTest is Test {
         device = vm.addr(DEVICE_KEY);
         device2 = vm.addr(DEVICE2_KEY);
         recovery = new RecoveryManager();
-        wallet = new KeymeshWallet(address(this), device, address(recovery));
+        wallet = new KeymeshWallet(address(this), device, address(recovery), address(0));
     }
 
     function _bootstrap() internal {
@@ -392,7 +392,7 @@ contract KeymeshWalletGovernanceTest is Test {
 
     function test_ZeroRecoveryManagerAddressRejected() public {
         vm.expectRevert(KeymeshErrors.ZeroAddress.selector);
-        new KeymeshWallet(address(this), device, address(0));
+        new KeymeshWallet(address(this), device, address(0), address(0));
     }
 
     function test_ManagerAuthorityRetiresAtInitialization() public {
@@ -481,3 +481,4 @@ contract KeymeshWalletGovernanceTest is Test {
         assertFalse(wallet.isDeviceAuthorized(device));
     }
 }
+

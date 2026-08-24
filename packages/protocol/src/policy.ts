@@ -1,109 +1,154 @@
 import { z } from 'zod';
-import type { TransactionType } from './constants';
-
-export const PolicyRuleSchema = z.object({
-  type: z.enum(['normal', 'high_value', 'recovery', 'guardian_management', 'policy_update']),
-  threshold: z.number().int().positive(),
-  timelockHours: z.number().int().nonnegative().optional(),
-  valueThresholdWei: z.string().regex(/^\d+$/).optional(),
-});
-
-export type PolicyRule = z.infer<typeof PolicyRuleSchema>;
-
-export const PolicySchema = z.object({
-  id: z.string().uuid(),
-  walletId: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  rules: z.array(PolicyRuleSchema),
-  defaultThreshold: z.number().int().positive(),
-  createdAt: z.number().int().positive(),
-  updatedAt: z.number().int().positive(),
-  version: z.number().int().positive(),
-});
-
-export type Policy = z.infer<typeof PolicySchema>;
 
 /**
- * Default rules encode the conceptual model from docs/protocol/transaction-policy.md:
- *   normal             -> device only
- *   high_value         -> device + guardian quorum
- *   recovery           -> guardian threshold + timelock
+ * Shared transaction-authorization policy domain types for Phase 1.3.
+ *
+ * These mirror the on-chain `IPolicyManager` surface one-for-one (same mode
+ * names, same status order) so off-chain previews can be checked against
+ * on-chain decisions. Classification precedence lives in
+ * `classifyTransaction` here, in Rust (`keymesh-core/src/policy`) and in
+ * Solidity — the three must stay in sync (see docs/protocol/policies.md).
  */
-export const DEFAULT_RULES: PolicyRule[] = [
-  { type: 'normal', threshold: 1 },
-  { type: 'high_value', threshold: 2, valueThresholdWei: '1000000000000000000' },
-  { type: 'recovery', threshold: 3, timelockHours: 168 },
-  { type: 'guardian_management', threshold: 2, timelockHours: 24 },
-  { type: 'policy_update', threshold: 2, timelockHours: 48 },
-];
 
-export interface CreatePolicyParams {
-  id: string;
-  walletId: string;
-  name: string;
-  rules?: PolicyRule[];
-  defaultThreshold?: number;
+/** Mirrors IPolicyManager.AuthorizationMode discriminants 0..1. */
+export const AUTHORIZATION_MODES = {
+  DEVICE_ONLY: 'device_only',
+  DEVICE_PLUS_GUARDIANS: 'device_plus_guardians',
+} as const;
+
+export type AuthorizationMode = (typeof AUTHORIZATION_MODES)[keyof typeof AUTHORIZATION_MODES];
+
+export const AUTHORIZATION_MODE_DISCRIMINANTS = {
+  device_only: 0,
+  device_plus_guardians: 1,
+} as const satisfies Record<AuthorizationMode, number>;
+
+/** Mirrors IPolicyManager.TxnAuthStatus discriminants 0..4. */
+export const TXN_AUTHORIZATION_STATUSES = {
+  NONE: 'none',
+  PENDING: 'pending',
+  AUTHORIZED: 'authorized',
+  EXECUTED: 'executed',
+  CANCELLED: 'cancelled',
+} as const;
+
+export type TransactionAuthorizationStatus =
+  (typeof TXN_AUTHORIZATION_STATUSES)[keyof typeof TXN_AUTHORIZATION_STATUSES];
+
+export const TXN_AUTHORIZATION_STATUS_DISCRIMINANTS = {
+  none: 0,
+  pending: 1,
+  authorized: 2,
+  executed: 3,
+  cancelled: 4,
+} as const satisfies Record<TransactionAuthorizationStatus, number>;
+
+const hexAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+const hexBytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+const decimalUint = z.string().regex(/^\d+$/);
+
+/**
+ * A wallet's policy configuration. `valueThresholdWei` uses a decimal string
+ * because JSON cannot carry uint256 precisely; version 0 means unconfigured
+ * (the wallet then behaves exactly like Phase 1.1).
+ */
+export const PolicyConfigSchema = z.object({
+  defaultMode: z.enum([AUTHORIZATION_MODES.DEVICE_ONLY, AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS]),
+  valueThresholdWei: decimalUint,
+  guardianApprovalsRequired: z.number().int().min(0),
+  version: z.number().int().min(0),
+});
+
+export type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
+
+/** A per-digest guardian transaction authorization. */
+export const TransactionAuthorizationSchema = z.object({
+  digest: hexBytes32,
+  wallet: hexAddress,
+  requester: hexAddress,
+  requestedAt: z.number().int().nonnegative(),
+  policyVersion: z.number().int().nonnegative(),
+  approvals: z.number().int().nonnegative(),
+  approvalsRequired: z.number().int().nonnegative(),
+  status: z.enum([
+    TXN_AUTHORIZATION_STATUSES.NONE,
+    TXN_AUTHORIZATION_STATUSES.PENDING,
+    TXN_AUTHORIZATION_STATUSES.AUTHORIZED,
+    TXN_AUTHORIZATION_STATUSES.EXECUTED,
+    TXN_AUTHORIZATION_STATUSES.CANCELLED,
+  ]),
+});
+
+export type TransactionAuthorization = z.infer<typeof TransactionAuthorizationSchema>;
+
+/** Inputs describing a hypothetical transaction for classification. */
+export interface ClassificationInput {
+  /** Recipient address. */
+  to: `0x${string}`;
+  /** Wei value as a decimal string (JSON-safe uint256). */
+  valueWei: string;
+  /** Calldata; only the first 4 bytes matter, when present. */
+  data?: `0x${string}`;
 }
 
-export function createPolicy(params: CreatePolicyParams): Policy {
-  const now = Date.now();
-  return {
-    id: params.id,
-    walletId: params.walletId,
-    name: params.name,
-    rules: params.rules ?? DEFAULT_RULES,
-    defaultThreshold: params.defaultThreshold ?? 1,
-    createdAt: now,
-    updatedAt: now,
-    version: 1,
-  };
+function hasSelector(data: string | undefined): boolean {
+  return typeof data === 'string' && data.length >= 10; // '0x' + 4 bytes
 }
 
-export function getRule(policy: Policy, type: TransactionType): PolicyRule | undefined {
-  return policy.rules.find((r) => r.type === type);
+/**
+ * Deterministic classification — precedence (first match wins):
+ *   1. policy-administration selector -> DEVICE_PLUS_GUARDIANS (structural)
+ *   2. restricted selector            -> DEVICE_PLUS_GUARDIANS
+ *   3. restricted destination         -> DEVICE_PLUS_GUARDIANS
+ *   4. value > threshold              -> DEVICE_PLUS_GUARDIANS
+ *   5. otherwise                      -> wallet default mode
+ *
+ * Unconfigured wallets (version 0) are DEVICE_ONLY except rule 1.
+ */
+export function classifyTransaction(
+  config: PolicyConfig,
+  restrictions: {
+    toIsPolicyManagerWithAdminSelector: boolean;
+    selectorRestricted: boolean;
+    destinationRestricted: boolean;
+  },
+  tx: ClassificationInput
+): AuthorizationMode {
+  if (restrictions.toIsPolicyManagerWithAdminSelector && hasSelector(tx.data)) {
+    return AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS;
+  }
+  if (!config || config.version === 0) {
+    return AUTHORIZATION_MODES.DEVICE_ONLY;
+  }
+  if (hasSelector(tx.data) && restrictions.selectorRestricted) {
+    return AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS;
+  }
+  if (restrictions.destinationRestricted) {
+    return AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS;
+  }
+  if (BigInt(tx.valueWei) > BigInt(config.valueThresholdWei)) {
+    return AUTHORIZATION_MODES.DEVICE_PLUS_GUARDIANS;
+  }
+  return config.defaultMode;
 }
 
-/** Effective approval threshold for a transaction class. */
-export function getThreshold(policy: Policy, type: TransactionType): number {
-  return getRule(policy, type)?.threshold ?? policy.defaultThreshold;
+/** Effective quorum for NEW requests; never zero (bootstrap minimum is 1). */
+export function effectiveRequestQuorum(config: PolicyConfig): number {
+  return config.guardianApprovalsRequired === 0 ? 1 : config.guardianApprovalsRequired;
 }
 
-export function getTimelockHours(policy: Policy, type: TransactionType): number {
-  return getRule(policy, type)?.timelockHours ?? 0;
+/** ANY policy change invalidates authorizations from older versions. */
+export function isAuthorizationVersionValid(
+  requestVersion: number,
+  currentVersion: number
+): boolean {
+  return requestVersion === currentVersion;
 }
 
-export function getValueThreshold(policy: Policy, type: TransactionType): bigint | undefined {
-  const wei = getRule(policy, type)?.valueThresholdWei;
-  return wei === undefined ? undefined : BigInt(wei);
-}
-
-export function updateRule(policy: Policy, rule: PolicyRule): Policy {
-  const exists = policy.rules.some((r) => r.type === rule.type);
-  return {
-    ...policy,
-    rules: exists
-      ? policy.rules.map((r) => (r.type === rule.type ? rule : r))
-      : [...policy.rules, rule],
-    updatedAt: Date.now(),
-    version: policy.version + 1,
-  };
-}
-
-export function removeRule(policy: Policy, type: TransactionType): Policy {
-  return {
-    ...policy,
-    rules: policy.rules.filter((r) => r.type !== type),
-    updatedAt: Date.now(),
-    version: policy.version + 1,
-  };
-}
-
-export function requiresTimelock(policy: Policy, type: TransactionType): boolean {
-  return getTimelockHours(policy, type) > 0;
-}
-
-/** A value is "high value" when it meets or exceeds the configured threshold. */
-export function isHighValue(policy: Policy, valueWei: bigint): boolean {
-  const threshold = getValueThreshold(policy, 'high_value');
-  return threshold !== undefined && valueWei >= threshold;
-}
+/** Example fixtures for tests/docs; not real addresses in use anywhere. */
+export const POLICY_CONFIG_EXAMPLE: PolicyConfig = {
+  defaultMode: AUTHORIZATION_MODES.DEVICE_ONLY,
+  valueThresholdWei: '1000000000000000000',
+  guardianApprovalsRequired: 2,
+  version: 1,
+};
