@@ -4,6 +4,7 @@ export { KEYMESH_TRANSACTION_VECTORS, type KeymeshTransactionVector } from './ve
 export * from './wallet';
 export * from './guardian';
 export * from './recovery';
+export * from './recovery-onchain';
 export * from './policy';
 export * from './transaction';
 export * from './validation';

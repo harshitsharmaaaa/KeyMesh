@@ -13,11 +13,11 @@ interface IPolicyManager {
     }
 
     struct Policy {
-        uint96 normalWeight;          // device weight required for normal txs
-        uint96 highValueWeight;       // guardian weight required on top of device
+        uint96 normalWeight; // device weight required for normal txs
+        uint96 highValueWeight; // guardian weight required on top of device
         uint256 highValueWeiBoundary; // value at/above which a tx is high-value
-        uint96 recoveryWeight;        // guardian quorum for recovery
-        uint64 recoveryTimelock;      // seconds; enforced by RecoveryManager
+        uint96 recoveryWeight; // guardian quorum for recovery
+        uint64 recoveryTimelock; // seconds; enforced by RecoveryManager
     }
 
     event PolicySet(address indexed wallet, Policy policy);

@@ -47,13 +47,17 @@ contract PolicyManagerTest is Test {
         IPolicyManager.Policy memory bad = _policy();
         bad.normalWeight = 0;
         vm.prank(WALLET);
-        vm.expectRevert(abi.encodeWithSelector(IPolicyManager.InvalidPolicy.selector, "normalWeight"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IPolicyManager.InvalidPolicy.selector, "normalWeight")
+        );
         policyManager.setPolicy(WALLET, bad);
 
         IPolicyManager.Policy memory bad2 = _policy();
         bad2.recoveryWeight = 0;
         vm.prank(WALLET);
-        vm.expectRevert(abi.encodeWithSelector(IPolicyManager.InvalidPolicy.selector, "recoveryWeight"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IPolicyManager.InvalidPolicy.selector, "recoveryWeight")
+        );
         policyManager.setPolicy(WALLET, bad2);
     }
 }

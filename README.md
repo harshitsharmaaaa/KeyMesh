@@ -4,14 +4,18 @@
 > recovery — using threshold-style cryptography, guardian quorums, and
 > timelocked recovery. Ethereum-first.
 
-**Status: Phase 1.1 implemented / prototype overall.** One real end-to-end
-authorization path exists: SDK → canonical `KEYMESH_TX_V1` encoding → keccak
-digest → ECDSA device signature → Solidity recovery → execution on local
-Anvil. Everything else (guardians, recovery wiring, policy enforcement,
-threshold signing) is scaffolding with honest maturity labels. This codebase
-is **not audited** and **not production-ready**; threshold cryptography
-(TSS/MPC) does **not** exist yet.
-See [docs/security/security-model.md](docs/security/security-model.md).
+**Status: Phases 1.1 + 1.2 implemented; prototype overall.** Two real
+end-to-end paths exist: device-signed transactions (SDK -> canonical
+`KEYMESH_TX_V1` encoding -> keccak digest -> ECDSA device signature ->
+Solidity recovery -> execution on local Anvil) and guardian-governed recovery
+(guardian bootstrap -> recovery request -> quorum approvals -> mandatory
+timelock -> atomic device replacement, old device revoked). The transitional
+manager account is now bootstrap-only and provably powerless after
+initialization. Everything else (transaction-policy enforcement, threshold
+signing) is scaffolding with honest maturity labels. This codebase is **not
+audited** and **not production-ready**; threshold cryptography (TSS/MPC) does
+**not** exist yet. See
+[docs/security/security-model.md](docs/security/security-model.md).
 
 ## What is KeyMesh?
 
@@ -146,9 +150,10 @@ See [crates/keymesh-core/README.md](crates/keymesh-core/README.md).
 
 Contracts live in `contracts/ethereum`. `KeymeshWallet` executes real
 device-signed transactions (canonical digest recovery, device set, sequential
-nonce, expiry, wallet/chain binding, reentrancy guard) and is covered by
-Foundry tests plus the Anvil integration script. Guardian/recovery/policy
-modules remain skeletons pending wiring.
+nonce, expiry, wallet/chain binding, reentrancy guard). `RecoveryManager` +
+`GuardianRegistry` enforce guardian-quorum timelocked recovery with atomic
+device replacement; all are covered by 96+ Foundry tests plus the Anvil
+integration script. Only the policy modules remain unwired (Phase 1.3).
 
 See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 
@@ -170,20 +175,24 @@ See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 
 ## Roadmap
 
-**Phase 1 — Ethereum wallet (current focus)**
-1. ~~Ethereum wallet contract: device-signed execution~~ ✅ Phase 1.1
-2. Guardian system: on-chain registration + weighted approvals end-to-end ← next
-3. Recovery state machine wired across TS/Rust/Solidity (+conformance tests)
-4. Transaction policy enforcement on-chain (class thresholds via PolicyManager)
-5. Manager-gated device management replaced by guardian/recovery governance
-6. Testing: property/fuzz suites, invariant tests, coverage gates
+**Phase 1 - Ethereum wallet (current focus)**
+1. Ethereum wallet contract: device-signed execution - done, Phase 1.1
+2. Guardian system + guardian-quorum recovery with timelock, wired across
+   TS/Rust/Solidity; manager reduced to bootstrap-only authority - done,
+   Phase 1.2
+3. Transaction policy enforcement on-chain (class thresholds via PolicyManager)
+   - next, Phase 1.3
+4. Testing: property/fuzz suites, invariant tests, coverage gates
 
-**Phase 2 — Advanced cryptography & multi-chain**
+**Phase 2 - Advanced cryptography & multi-chain**
 1. Threshold signing / MPC integration (audited stacks only)
 2. Solana adapter (chain-kind abstraction already exists)
 3. Advanced cryptography: key-share rotation, proactive refresh
 4. Security hardening: audits, fuzzing campaigns, formal specs where warranted
-
 ## License
 
 MIT OR Apache-2.0 (to be finalized).
+
+
+
+

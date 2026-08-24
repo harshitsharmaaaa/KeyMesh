@@ -1,28 +1,123 @@
 /**
- * Minimal human-readable ABI for KeymeshWallet (Phase 1.1 surface).
- * Kept in sync manually with contracts/ethereum/src/interfaces/IKeymeshWallet.sol;
- * the Foundry digest-vector tests plus the Anvil integration script guard
- * against drift.
+ * Minimal human-readable ABIs for the Phase 1.2 contract set.
+ * Kept in sync manually with:
+ *   contracts/ethereum/src/interfaces/IKeymeshWallet.sol
+ *   contracts/ethereum/src/interfaces/IGuardianRegistry.sol
+ *   contracts/ethereum/src/interfaces/IRecoveryManager.sol
+ *
+ * Custom errors are INCLUDED so viem can decode revert data into readable
+ * domain errors (see ./errors.ts). The Foundry digest-vector tests plus the
+ * Anvil integration script guard against drift.
  *
  * Parsed via viem's parseAbi at module load: runtime decoders
- * (decodeEventLog/parseEventLogs) require object ABIs.
+ * (decodeEventLog/simulateContract) require object ABIs.
  */
 import { parseAbi } from 'viem';
 
 const keymeshWalletAbiItems = [
+  // device management
   'function registerDevice(address device)',
   'function revokeDevice(address device)',
   'function isDeviceAuthorized(address device) view returns (bool)',
   'function deviceCount() view returns (uint256)',
   'function getNonce() view returns (uint256)',
+  // bootstrap / recovery wiring
   'function manager() view returns (address)',
+  'function recoveryManager() view returns (address)',
+  'function recoveryInitialized() view returns (bool)',
+  'function initializeRecoveryGovernance()',
+  'function applyRecoveredDevice(address replacedDevice, address newDevice)',
+  // canonical execution surface
   'function transactionDigest(address wallet, uint256 chainId, address to, uint256 value, bytes data, uint256 nonce, uint256 expiry) view returns (bytes32)',
   'function execute(address wallet, uint256 chainId, address to, uint256 value, bytes data, uint256 nonce, uint256 expiry, bytes signature)',
+  // events
   'event DeviceRegistered(address indexed device, uint64 registeredAt)',
   'event DeviceRevoked(address indexed device, uint64 revokedAt)',
+  'event RecoveryGovernanceInitialized(uint64 initializedAt)',
   'event TransactionExecuted(uint256 indexed nonce, address indexed device, address indexed to, uint256 value, bytes data)',
+  // custom errors
+  'error ZeroAddress()',
+  'error NotDeviceManager(address caller)',
+  'error AlreadyRegistered(address device)',
+  'error NotRegistered(address device)',
+  'error LastDeviceRemoval()',
+  'error ManagerAuthorityRetired(address manager)',
+  'error NotRecoveryManager(address caller)',
+  'error WrongWallet(address provided)',
+  'error WrongChain(uint256 provided)',
+  'error InvalidNonce(uint256 expected, uint256 provided)',
+  'error TransactionExpired(uint256 expiry, uint256 nowTs)',
+  'error UnauthorizedDevice(address signer)',
+  'error ExecutionFailed(bytes returnData)',
+] as const;
+
+const guardianRegistryAbiItems = [
+  'function recoveryManager() view returns (address)',
+  'function addGuardian(address wallet, address guardian)',
+  'function removeGuardian(address wallet, address guardian)',
+  'function isGuardian(address wallet, address guardian) view returns (bool)',
+  'function guardianCount(address wallet) view returns (uint256)',
+  'function getGuardians(address wallet) view returns (address[])',
+  'event GuardianAdded(address indexed wallet, address indexed guardian)',
+  'event GuardianRemoved(address indexed wallet, address indexed guardian)',
+  'error GuardianNotActive(address wallet, address guardian)',
+  'error GuardianAlreadyActive(address wallet, address guardian)',
+  'error NotRecoveryManager(address caller)',
+] as const;
+
+const recoveryManagerAbiItems = [
+  // configuration views
+  'function MIN_TIMELOCK() view returns (uint64)',
+  'function guardianRegistry() view returns (address)',
+  'function statusOf(address wallet) view returns (uint8)',
+  'function latestRecoveryIdOf(address wallet) view returns (uint256)',
+  'function quorumOf(address wallet) view returns (uint256)',
+  'function recoveryTimelockSeconds(address wallet) view returns (uint64)',
+  'function requestById(uint256 recoveryId) view returns (address wallet, address initiator, address replacedDevice, address newDevice, uint64 initiatedAt, uint64 executeAfter, uint256 approvals, uint256 quorumSnapshot, uint8 status)',
+  'function hasApproved(uint256 recoveryId, address guardian) view returns (bool)',
+  // bootstrap (manager-only, once)
+  'function bootstrapRecoveryGovernance(address wallet, address[] initialGuardians, uint256 quorum, uint64 timelockSeconds)',
+  // device-signed governance (through wallet.execute)
+  'function addGuardian(address wallet, address guardian)',
+  'function removeGuardian(address wallet, address guardian)',
+  'function setQuorum(address wallet, uint256 quorum)',
+  'function setRecoveryTimelock(address wallet, uint64 timelockSeconds)',
+  // lifecycle
+  'function initiateRecovery(address wallet, address replacedDevice, address newDevice)',
+  'function approveRecovery(address wallet)',
+  'function cancelRecovery(address wallet)',
+  'function finalizeRecovery(address wallet)',
+  // events
+  'event GuardianSetAdded(address indexed wallet, address[] guardians, uint256 quorum)',
+  'event RecoveryGovernanceBootstrapped(address indexed wallet, address indexed bootstrappedBy, uint256 quorum, uint64 timelockSeconds)',
+  'event RecoveryInitiated(uint256 indexed recoveryId, address indexed wallet, address indexed initiator, address replacedDevice, address newDevice, uint256 quorum, uint64 initiatedAt)',
+  'event RecoveryApproved(uint256 indexed recoveryId, address indexed wallet, address indexed guardian, uint256 approvalCount)',
+  'event RecoveryTimelockStarted(uint256 indexed recoveryId, address indexed wallet, uint64 executeAfter)',
+  'event RecoveryCancelled(uint256 indexed recoveryId, address indexed wallet, address indexed by)',
+  'event RecoveryFinalized(uint256 indexed recoveryId, address indexed wallet, address newDevice, address replacedDevice)',
+  // custom errors
+  'error RecoveryAlreadyActive(uint256 activeRecoveryId)',
+  'error NoActiveRecovery(address wallet)',
+  'error InvalidReplacementDevice(address newDevice)',
+  'error InvalidReplacedDevice(address replacedDevice)',
+  'error UnsatisfiableQuorum(uint256 quorum, uint256 guardianCount)',
+  'error NotGuardianOrDevice(address caller)',
+  'error NotRegisteredGuardian(address guardian)',
+  'error DuplicateApproval(address guardian)',
+  'error InvalidStateTransition(uint8 from, string attempted)',
+  'error TimelockNotElapsed(uint64 executeAfter, uint64 nowTs)',
+  'error AlreadyInitialized()',
+  'error NotInitialized()',
+  'error InvalidQuorum(uint256 quorum, uint256 guardianCount)',
+  'error TimelockTooShort(uint64 provided, uint64 minimum)',
+  'error InvalidGuardianSet()',
+  'error Unauthorized()',
 ] as const;
 
 export const keymeshWalletAbi = parseAbi(keymeshWalletAbiItems);
+export const guardianRegistryAbi = parseAbi(guardianRegistryAbiItems);
+export const recoveryManagerAbi = parseAbi(recoveryManagerAbiItems);
 
 export type KeymeshWalletAbi = typeof keymeshWalletAbi;
+export type GuardianRegistryAbi = typeof guardianRegistryAbi;
+export type RecoveryManagerAbi = typeof recoveryManagerAbi;

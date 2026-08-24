@@ -86,6 +86,26 @@ export function normalizeVTo2728(signature: `0x${string}`): `0x${string}` {
   throw new Error(`invalid signature v byte: ${v}`);
 }
 
+/**
+ * Signs a 32-byte digest with a device key — raw digest signing, no EIP-191
+ * prefix — producing r||s||v with low-S normalization and a deterministic
+ * RFC-6979 nonce (@noble/curves). Shared by transaction and recovery flows.
+ */
+export function signDigestWithDeviceKey(
+  privateKey: `0x${string}`,
+  digest: `0x${string}`
+): `0x${string}` {
+  const sig = secp256k1.sign(hexToBytes(digest), hexToBytes(privateKey), {
+    prehash: false,
+    lowS: true,
+  });
+  const compact = sig.toCompactRawBytes(); // r || s, 64 bytes
+  const out = new Uint8Array(65);
+  out.set(compact, 0);
+  out[64] = sig.recovery + 27;
+  return bytesToHex(out);
+}
+
 export interface BuildTransactionInput {
   wallet: Address;
   chainId: bigint;
@@ -184,6 +204,12 @@ export class KeymeshWalletSession {
     value: bigint;
     data?: `0x${string}`;
     expiresInSeconds?: number;
+    /**
+     * Clock source for expiry computation. Defaults to wall clock; pass the
+     * CHAIN clock when the chain may have been time-traveled (Anvil tests),
+     * otherwise every request would expire instantly.
+     */
+    nowSeconds?: bigint;
   }): Promise<KeymeshTransaction> {
     const nonce = await this.getNonce();
     return buildKeymeshTransaction({
@@ -194,6 +220,7 @@ export class KeymeshWalletSession {
       value: input.value,
       data: input.data,
       expiresInSeconds: input.expiresInSeconds,
+      nowSeconds: input.nowSeconds,
     });
   }
 
@@ -206,17 +233,11 @@ export class KeymeshWalletSession {
     validateKeymeshTransaction(transaction);
     const digest = hashKeymeshTransaction(transaction);
 
-    const sig = secp256k1.sign(hexToBytes(digest), hexToBytes(this.devicePrivateKey), {
-      prehash: false,
-      lowS: true,
-    });
-
-    const compact = sig.toCompactRawBytes(); // r || s, 64 bytes
-    const out = new Uint8Array(65);
-    out.set(compact, 0);
-    out[64] = sig.recovery + 27;
-
-    return { transaction, digest, signature: bytesToHex(out) };
+    return {
+      transaction,
+      digest,
+      signature: signDigestWithDeviceKey(this.devicePrivateKey, digest),
+    };
   }
 
   async execute(signed: SignedKeymeshTransaction): Promise<ExecutionResult> {
@@ -325,12 +346,17 @@ export interface KeymeshWalletDeployInput {
   artifactBytecode: `0x${string}`;
   rpcUrl: string;
   chain: Chain;
-  /** Becomes the transitional Phase 1 device-set manager. */
+  /**
+   * Becomes the wallet's BOOTSTRAP-ONLY device-set manager; the role is
+   * permanently retired when recovery governance is initialized.
+   */
   managerAccount: Account;
   initialDevice: Address;
+  /** RecoveryManager contract allowed to apply finalized recoveries. */
+  recoveryManagerAddress?: Address;
 }
 
-/** Deploys KeymeshWallet; the deployer is the transitional manager. */
+/** Deploys KeymeshWallet with a RecoveryManager pointer (Phase 1.2 wiring). */
 export async function deployKeymeshWallet(
   input: KeymeshWalletDeployInput
 ): Promise<{ address: Address; txHash: `0x${string}` }> {
@@ -341,14 +367,85 @@ export async function deployKeymeshWallet(
     transport: http(input.rpcUrl),
   });
 
+  const recoveryManagerAddress =
+    input.recoveryManagerAddress ?? '0x0000000000000000000000000000000000000001';
   const hash = await walletClient.deployContract({
     abi: input.artifactAbi as never,
     bytecode: input.artifactBytecode,
-    args: [input.managerAccount.address, input.initialDevice],
+    args: [input.managerAccount.address, input.initialDevice, recoveryManagerAddress],
   });
   const receipt = await waitForTransactionReceipt(publicClient, { hash });
   if (receipt.status !== 'success') throw new Error(`deployment reverted: ${hash}`);
   if (!receipt.contractAddress) throw new Error(`no contractAddress in receipt: ${hash}`);
 
   return { address: receipt.contractAddress, txHash: hash };
+}
+
+export interface KeymeshStackDeployInput {
+  rpcUrl: string;
+  chain: Chain;
+  /** Foundry artifacts for KeymeshWallet and RecoveryManager. */
+  walletArtifact: { abi: unknown[]; bytecode: `0x${string}` };
+  recoveryArtifact: { abi: unknown[]; bytecode: `0x${string}` };
+  /** Deployer becomes the wallet's BOOTSTRAP-ONLY manager. */
+  managerAccount: Account;
+  initialDevice: Address;
+}
+
+/**
+ * Deploys the Phase 1.2 stack: RecoveryManager (which constructs and owns its
+ * GuardianRegistry) + KeymeshWallet pointed at it. Guardian bootstrap is left
+ * to KeymeshRecoverySession.bootstrap so callers control quorum/timelock.
+ */
+export async function deployKeymeshStack(
+  input: KeymeshStackDeployInput
+): Promise<{ recoveryAddress: Address; registryAddress: Address; walletAddress: Address }> {
+  const publicClient = createPublicClient({ chain: input.chain, transport: http(input.rpcUrl) });
+  const walletClient = createWalletClient({
+    account: input.managerAccount,
+    chain: input.chain,
+    transport: http(input.rpcUrl),
+  });
+
+  async function deploy(
+    artifact: {
+      abi: unknown[];
+      bytecode: `0x${string}`;
+    },
+    args: unknown[]
+  ): Promise<Address> {
+    const hash = await walletClient.deployContract({
+      abi: artifact.abi as never,
+      bytecode: artifact.bytecode,
+      args: args as never,
+    });
+    const receipt = await waitForTransactionReceipt(publicClient, { hash });
+    if (receipt.status !== 'success') throw new Error(`deployment reverted: ${hash}`);
+    if (!receipt.contractAddress) throw new Error(`no contractAddress in receipt: ${hash}`);
+    return receipt.contractAddress;
+  }
+
+  // The RecoveryManager constructs its own GuardianRegistry, so the pairing
+  // can never be misconfigured.
+  const recoveryAddress = await deploy(input.recoveryArtifact, []);
+  const registryAddress = (await publicClient.readContract({
+    address: recoveryAddress,
+    abi: [
+      {
+        type: 'function',
+        name: 'guardianRegistry',
+        inputs: [],
+        outputs: [{ type: 'address' }],
+        stateMutability: 'view',
+      },
+    ] as never,
+    functionName: 'guardianRegistry',
+  })) as Address;
+  const wallet = await deploy(input.walletArtifact, [
+    input.managerAccount.address,
+    input.initialDevice,
+    recoveryAddress,
+  ]);
+
+  return { recoveryAddress, registryAddress, walletAddress: wallet };
 }

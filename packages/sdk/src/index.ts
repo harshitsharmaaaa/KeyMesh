@@ -24,13 +24,30 @@ export {
   buildKeymeshTransaction,
   createKeymeshSession,
   deployKeymeshWallet,
+  deployKeymeshStack,
   KeymeshWalletSession,
   normalizeVTo2728,
+  signDigestWithDeviceKey,
   type ExecutionResult,
   type KeymeshSessionConfig,
   type SignedKeymeshTransaction,
 } from './onchain/client';
-export { keymeshWalletAbi } from './onchain/abi';
+export {
+  guardianRegistryAbi,
+  keymeshWalletAbi,
+  recoveryManagerAbi,
+} from './onchain/abi';
+export {
+  ContractCallError,
+  type DecodedContractError,
+} from './onchain/errors';
+export {
+  KeymeshRecoverySession,
+  createKeymeshRecoverySession,
+  type BootstrapRecoveryInput,
+  type InitiateRecoveryInput,
+  type KeymeshRecoveryConfig,
+} from './onchain/recovery';
 export { canonicalTransactionHex, hashKeymeshTransaction } from '@keymesh/protocol';
 
 import type {

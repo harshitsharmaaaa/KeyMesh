@@ -11,15 +11,22 @@ import {KeymeshTx} from "./KeymeshTx.sol";
 /// @notice Device-authorized wallet: executes calls whose ECDSA signature
 ///         recovers to a registered device over the canonical KEYMESH_TX_V1
 ///         digest.
-/// @dev Phase 1.1 status: IMPLEMENTED for single-device ECDSA authorization.
+/// @dev Phase 1.2 status: IMPLEMENTED for single-device ECDSA authorization
+///      plus guardian-governed device replacement.
 ///
 ///      Authorization model:
 ///       - Execution authority = a signature from ANY registered device.
 ///         `msg.sender` is irrelevant to execution, so any relayer may submit.
-///       - Device management is gated on `manager` (the deployer) as an
-///         explicitly TRANSITIONAL Phase 1 control; devices may additionally
-///         revoke themselves. Phase 2 replaces this with guardian/recovery
-///         governance — no permanent admin exists and none should be added.
+///       - Device-set changes are governed by the `recoveryManager` contract
+///         (guardian quorum + timelock). The deployer-chosen `manager`
+///         account is BOOTSTRAP-ONLY: it may add devices until recovery
+///         governance is initialized, after which `ManagerAuthorityRetired`
+///         makes every manager path revert — permanently, by construction.
+///       - Devices may always revoke themselves.
+///
+///      Recovery application is atomic: {applyRecoveredDevice} authorizes the
+///      new device BEFORE revoking the replaced one, so the wallet never dips
+///      below one authorized device inside the transaction.
 ///
 ///      Replay protection: strictly sequential per-wallet nonce (must equal
 ///      the next expected value), expiry (valid while block.timestamp <=
@@ -28,18 +35,23 @@ import {KeymeshTx} from "./KeymeshTx.sol";
 ///      Failure semantics: validation failures leave zero state changes. A
 ///      failing target bubbles as `ExecutionFailed`, also reverting the
 ///      nonce bump — so a reverted execution leaves the wallet untouched and
-///      its signature remains retryable until expiry (mirroring how a
-///      dropped Ethereum transaction keeps its nonce).
+///      its signature remains retryable until expiry.
 contract KeymeshWallet is IKeymeshWallet, ReentrancyGuard {
-    /// @notice Transitional device-set manager; see contract dev docs.
+    /// @notice Bootstrap-only device-set manager; inert after initialization.
     address public immutable manager;
+
+    /// @notice RecoveryManager contract allowed to apply finalized recoveries.
+    address public immutable recoveryManager;
+
+    bool private _recoveryInitialized;
 
     mapping(address device => bool) private _devices;
     uint256 private _deviceCount;
     uint256 private _nonce;
 
-    constructor(address manager_, address initialDevice) {
-        if (manager_ == address(0) || initialDevice == address(0)) {
+    constructor(address manager_, address initialDevice, address recoveryManager_) {
+        if (manager_ == address(0) || initialDevice == address(0) || recoveryManager_ == address(0))
+        {
             revert KeymeshErrors.ZeroAddress();
         }
         if (manager_ != initialDevice && msg.sender != manager_) {
@@ -47,21 +59,43 @@ contract KeymeshWallet is IKeymeshWallet, ReentrancyGuard {
             revert KeymeshErrors.Unauthorized();
         }
         manager = manager_;
+        recoveryManager = recoveryManager_;
         _devices[initialDevice] = true;
         _deviceCount = 1;
         emit DeviceRegistered(initialDevice, uint64(block.timestamp));
     }
 
-    modifier onlyManager() {
+    modifier onlyBootstrapManager() {
+        if (_recoveryInitialized) revert ManagerAuthorityRetired(manager);
         if (msg.sender != manager) revert NotDeviceManager(msg.sender);
         _;
+    }
+
+    modifier onlyRecoveryManager() {
+        if (msg.sender != recoveryManager) revert NotRecoveryManager(msg.sender);
+        _;
+    }
+
+    // ---------------------------------------------------------------
+    // Bootstrap / governance wiring
+    // ---------------------------------------------------------------
+
+    function recoveryInitialized() external view returns (bool) {
+        return _recoveryInitialized;
+    }
+
+    /// @inheritdoc IKeymeshWallet
+    function initializeRecoveryGovernance() external onlyRecoveryManager {
+        if (_recoveryInitialized) revert KeymeshErrors.AlreadyInitialized();
+        _recoveryInitialized = true;
+        emit RecoveryGovernanceInitialized(uint64(block.timestamp));
     }
 
     // ---------------------------------------------------------------
     // Device management
     // ---------------------------------------------------------------
 
-    function registerDevice(address device) external onlyManager {
+    function registerDevice(address device) external onlyBootstrapManager {
         if (device == address(0)) revert KeymeshErrors.ZeroAddress();
         if (_devices[device]) revert AlreadyRegistered(device);
 
@@ -71,14 +105,40 @@ contract KeymeshWallet is IKeymeshWallet, ReentrancyGuard {
     }
 
     function revokeDevice(address device) external {
+        bool preInitManager = !_recoveryInitialized && msg.sender == manager;
         bool isSelf = msg.sender == device && _devices[device];
-        if (msg.sender != manager && !isSelf) revert NotDeviceManager(msg.sender);
+        if (!preInitManager && !isSelf) revert NotDeviceManager(msg.sender);
         if (!_devices[device]) revert NotRegistered(device);
         if (_deviceCount == 1) revert LastDeviceRemoval();
 
         delete _devices[device];
         _deviceCount -= 1;
         emit DeviceRevoked(device, uint64(block.timestamp));
+    }
+
+    /// @inheritdoc IKeymeshWallet
+    function applyRecoveredDevice(address replacedDevice, address newDevice)
+        external
+        onlyRecoveryManager
+    {
+        if (newDevice == address(0)) revert KeymeshErrors.ZeroAddress();
+        if (_devices[newDevice]) revert AlreadyRegistered(newDevice);
+        // The RecoveryManager validated this at initiation; re-check against
+        // live state so finalization can never desync from reality.
+        if (replacedDevice != address(0) && !_devices[replacedDevice]) {
+            revert NotRegistered(replacedDevice);
+        }
+
+        // Authorize first: keeps device count >= 1 at every intermediate step.
+        _devices[newDevice] = true;
+        _deviceCount += 1;
+        emit DeviceRegistered(newDevice, uint64(block.timestamp));
+
+        if (replacedDevice != address(0)) {
+            delete _devices[replacedDevice];
+            _deviceCount -= 1;
+            emit DeviceRevoked(replacedDevice, uint64(block.timestamp));
+        }
     }
 
     function isDeviceAuthorized(address device) external view returns (bool) {

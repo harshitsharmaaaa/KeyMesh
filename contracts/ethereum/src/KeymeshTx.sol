@@ -38,14 +38,14 @@ library KeymeshTx {
         return keccak256(
             abi.encodePacked(
                 DOMAIN_TAG,
-                wallet,             // packed: 20 raw bytes
-                chainId,            // uint256 big-endian
-                nonce,              // uint256 big-endian
-                to,                 // packed: 20 raw bytes
-                value,              // uint256 big-endian
+                wallet, // packed: 20 raw bytes
+                chainId, // uint256 big-endian
+                nonce, // uint256 big-endian
+                to, // packed: 20 raw bytes
+                value, // uint256 big-endian
                 uint32(data.length),
                 data,
-                expiry              // uint256 big-endian
+                expiry // uint256 big-endian
             )
         );
     }

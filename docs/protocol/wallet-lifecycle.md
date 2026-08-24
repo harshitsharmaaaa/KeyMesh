@@ -1,45 +1,53 @@
 # Wallet Lifecycle
 
-> **Status: Phase 1.1 implemented on-chain + prototype local state.** Device
-> authorization, signature-verified execution, nonce, and expiry are enforced
-> by the `KeymeshWallet` contract and driven by the SDK. Guardian/policy
-> wiring remains design-stage; steps below say which is which.
+> **Status: Phases 1.1 + 1.2 implemented on-chain.** Device authorization,
+> signature-verified execution, nonce, expiry, guardian-governed device
+> replacement, and bootstrap-only manager authority are enforced by the
+> contracts and driven by the SDK. Transaction-policy enforcement remains
+> design-stage; steps below say which is which.
 
 ## States of a device (on-chain: `KeymeshWallet`)
 
 ```
-             registerDevice
-  (absent) ────────────────► authorized
-                               │    │
-              revokeDevice     │    │ future recovery completion
-                   ▼           │    ▼
-              revoked          │  authorized (replacement device)
-                               │
-                               └──► revoked
+             registerDevice            applyRecoveredDevice (via RecoveryManager)
+  (absent) ──────────────► authorized ◄──────────────────┐
+                               │    │                    │
+              revokeDevice     │    │ guardian quorum +  │ new device authorized,
+              OR self-revoke   │    │ timelock           │ replaced device revoked
+                               ▼    ▼                    │
+                            revoked ─────────────────────┘ (old slot)
 ```
 
 - `authorized` devices may sign canonical transaction digests; the wallet
   executes only those. `msg.sender` is irrelevant — any relayer can submit.
 - `revoked` devices lose all authority immediately and cannot be un-revoked;
-  a replacement must be newly registered.
-- Registration is manager-gated in Phase 1 (transitional control held by the
-  deployer account). Revocation is allowed for the manager OR the device
-  itself, so a device holder can cut their own key off. The last remaining
-  device cannot be removed (keeps the wallet operable).
-- A wallet must always retain at least one authorized device path OR an active
-  recovery to remain operable; losing all devices without guardians means
-  relying entirely on recovery.
+  a replacement must arrive through a fresh recovery or registration.
+- A wallet may hold MULTIPLE devices simultaneously. Recovery replaces exactly
+  one device slot (`replacedDevice → newDevice`); `replacedDevice = 0` models
+  total loss of all devices (pure addition). The last-device guard applies to
+  self/manager revocation, never to recovery application (which authorizes
+  before revoking inside one atomic call).
+
+## Who controls the device set
+
+| Phase | Authority |
+| ----- | --------- |
+| Before recovery governance is initialized | The deployer-chosen `manager` (BOOTSTRAP-ONLY role) may register/revoke devices; devices may always revoke themselves. |
+| After `initializeRecoveryGovernance()` | ONLY the RecoveryManager, via `applyRecoveredDevice`, which itself requires guardian quorum + elapsed timelock. Every manager path reverts `ManagerAuthorityRetired` — permanently, by construction (tested). |
 
 ## Wallet creation (implemented)
 
 1. User generates a device keypair locally with an audited library
    (@noble/curves via viem accounts today).
-2. The `KeymeshWallet` contract is deployed; the constructor pre-authorizes
-   the first device (`Deploy.s.sol` takes `INITIAL_DEVICE_ADDRESS`).
-3. Transaction authorization policy (Phase 1.1): every executed call needs one
+2. The stack is deployed: `RecoveryManager` (which constructs its own
+   `GuardianRegistry`) then `KeymeshWallet(manager, initialDevice,
+   recoveryManager)`; the constructor pre-authorizes the first device.
+3. The manager bootstraps recovery governance ONCE: initial guardians,
+   quorum (≥ 1), timelock (≥ 1h; suggested 24h) — this also retires the
+   manager's own authority. See [recovery.md](recovery.md).
+4. Transaction authorization policy (Phase 1.1): every executed call needs one
    registered-device signature over the canonical digest. Class-based policy
-   (high-value → guardian quorum) is future work via PolicyManager.
-4. Guardians are not yet wired to the wallet on-chain.
+   (high-value ⇒ guardian quorum) is future work via PolicyManager (Phase 1.3).
 
 ## Execution rules (enforced by `execute()`)
 
@@ -54,27 +62,36 @@ All checks happen before any state change or external call:
    currently-registered device.
 5. Only then: nonce increments, external call runs, `TransactionExecuted`
    emits. A failing target reverts the whole execution — including the nonce
-   bump — so the signed request stays retryable until it succeeds or expires,
-   mirroring how a dropped Ethereum transaction keeps its nonce.
+   bump — so the signed request stays retryable until it succeeds or expires.
 
-## Recovery as the safety net (design-stage on-chain)
+The same signed path is reused for governance: a device signs a transaction
+whose target is the RecoveryManager (`addGuardian`, `setQuorum`, …); the
+wallet verifies the signature first, then forwards the call with
+`msg.sender == wallet` as proof of device authority.
 
-If all devices are lost, recovery re-establishes control:
+## Recovery as the safety net (implemented)
+
+If a device is lost/stolen — or ALL of them are — recovery re-establishes
+control:
 
 ```
-initiate (new device) → guardian approvals reach threshold
-                      → timelock window elapses
-                      → new device authorized
+initiate (guardian or device) → guardian approvals reach quorum snapshot
+                              → timelock window elapses (public warning)
+                              → finalize: authorize replacement (+ revoke replaced)
 ```
 
-Details in [recovery.md](recovery.md). The Rust/TS state machines exist and
-are tested; the Solidity side is not yet connected to `KeymeshWallet`.
+Full state machine, authority rules, cancellation semantics, attack scenarios:
+[recovery.md](recovery.md).
 
 ## Invariants
 
-1. A revoked device's signatures fail from the revocation onward (checked at
+1. A revoked device's signatures fail from revocation onward (checked at
    execution time against live device state).
 2. Every signed digest binds wallet, chainId, and nonce — replay across any
    of these dimensions fails validation.
-3. The SDK never persists private keys; keys are passed per-session by the
+3. Creating or approving a recovery request never changes the device set;
+   only finalization does, atomically.
+4. After initialization there is NO account that can both move funds directly
+   and change the device set.
+5. The SDK never persists private keys; keys are passed per-session by the
    embedding application (see security model for current caveats).

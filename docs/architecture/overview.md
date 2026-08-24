@@ -1,8 +1,8 @@
 # KeyMesh Architecture Overview
 
-> **Status: Phase 1.1 implemented** — one real end-to-end authorization path
-> (SDK → canonical encoding → ECDSA device signature → Solidity recovery →
-> execution on Anvil) plus prototype scaffolding for everything else.
+> **Status: Phases 1.1 + 1.2 implemented** — two real end-to-end paths
+> (device-signed transactions AND guardian-quorum timelocked recovery with
+> device replacement) plus prototype scaffolding for everything else.
 > Components are labeled by maturity; nothing here is production-ready or
 > audited.
 
@@ -86,17 +86,39 @@ from a registered device's signature over the canonical digest.
 | Component             | State       | Notes                                                     |
 | --------------------- | ----------- | --------------------------------------------------------- |
 | Canonical TX format   | implemented | TS/Rust/Solidity byte-identical via shared vectors         |
-| KeymeshWallet         | experimental| device auth + replay/expiry guards, works on Anvil         |
-| SDK on-chain flow     | experimental| build/sign/execute session; not production custody         |
-| Domain models (TS)    | prototype   | Zod-validated models and pure state transitions            |
+| KeymeshWallet         | experimental| device auth + replay/expiry guards + recovery application entry; works on Anvil |
+| RecoveryManager       | implemented (Phase 1.2) | guardian quorum + timelock + cancellation state machine, owns its GuardianRegistry |
+| GuardianRegistry      | implemented (Phase 1.2) | per-wallet unweighted guardian sets; mutated only by RecoveryManager |
+| SDK on-chain flow     | experimental| build/sign/execute session + KeymeshRecoverySession; not production custody |
+| Domain models (TS)    | prototype   | Zod-validated models incl. on-chain recovery domain types  |
 | SDK local-state APIs  | prototype   | wallets/guardians/recovery over in-memory storage          |
-| Dashboard             | prototype   | mock data through the SDK + server-side Anvil demo route   |
-| Rust core             | prototype   | real FSMs/policy engine + implemented TX codec; mock crypto|
-| GuardianRegistry      | skeleton    | surfaces + tests; not wired into the wallet yet            |
-| RecoveryManager       | skeleton    | state machine + timelock tests; not wired to devices yet   |
+| Dashboard             | prototype   | mock pages + real server-side demo routes (/demo txs, /recovery guardian flow) |
+| Rust core             | prototype   | recovery FSM mirrors contract exactly + TX codec; mock crypto |
 | PolicyManager         | skeleton    | policy storage/tests; no enforcement path from execute()   |
-| Threshold signing/MPC | not started | Phase 2                                                    |
-| Solana adapter        | not started | Phase 2; chain-kind abstraction already exists             |
+| Threshold signing/MPC | not started | later phase; recovery governance deliberately independent  |
+| Solana adapter        | not started | later phase; chain-kind abstraction already exists         |
+
+## How a Phase 1.2 recovery flows
+
+```
+apps/dashboard        /recovery page: state + actions only (server API route)
+    |
+packages/sdk          KeymeshRecoverySession: bootstrap / initiate / approve /
+    |                 cancel / finalize + device-signed guardian management;
+    |                 decodes custom errors into domain errors
+contracts/ethereum    RecoveryManager (policy + FSM)
+    |                  - bootstrap once by manager, then authority retired
+    |                  - guardians approve -> quorum snapshot -> timelock
+    |                 GuardianRegistry (per-wallet sets, RM-owned storage)
+    |                 KeymeshWallet.applyRecoveredDevice: atomic swap,
+    |                  callable ONLY by the RecoveryManager
+```
+
+Guardians interact as EOAs directly (approve/initiate); device-signed
+governance travels through `KeymeshWallet.execute` exactly like normal
+transactions, so `msg.sender == wallet` proves device authority to the
+RecoveryManager. Finalization is permissionless — any relayer can submit an
+already-approved, timelock-expired recovery.
 
 ## Chain abstraction
 
@@ -118,13 +140,15 @@ or recovery.
 Full details: [security/security-model.md](../security/security-model.md) and
 [security/threat-model.md](../security/threat-model.md). In short:
 
-- Phase 1.1 authority = one ECDSA key per device. A compromised device key can
-  drain the wallet one valid transaction at a time; there is no threshold yet.
-- Device-set management (register/revoke) is gated on a transitional
-  deployer-chosen `manager` account — explicitly a Phase 1 control, to be
-  replaced by guardian/recovery governance. No permanent admin exists and none
-  should be added.
-- The design goal remains: no single party can take over faster than the
-  timelock allows once guardians/recovery are wired in. The protocol does NOT
-  protect against a compromised device, and today nothing else protects you
-  either.
+- Transaction authority remains one ECDSA key per device (Phase 1.1). A
+  compromised device key can drain the wallet one valid transaction at a time;
+  recovery revokes it only after quorum + timelock, not instantly.
+- DEVICE-SET authority is guardian-governed (Phase 1.2): the deployer-chosen
+  manager exists only to bootstrap the first guardians and initialize
+  governance, at which point its authority is permanently retired on-chain.
+  Guardians can never move funds; devices can never approve recoveries.
+- The design goal is now partially realized: changing the authorization set
+  requires either a live device signature (guardian management) or a public,
+  timelocked guardian quorum. Taking over faster than the timelock allows
+  would require breaking both layers at once. The protocol still does NOT
+  protect funds against an actively compromised device.

@@ -39,32 +39,45 @@ forge test --root contracts/ethereum                          # Solidity tests
 
 Turbo caches everything: re-runs with unchanged inputs are instant.
 
-## Phase 1.1: end-to-end Anvil integration
+## Phase 1.1 + 1.2: end-to-end Anvil integration
 
-One command runs the full device-signed flow against a disposable local chain:
+One command runs BOTH real flows against a disposable local chain:
 
 ```sh
 bun run integration:anvil
 ```
 
 The script (`packages/sdk/scripts/anvil-integration.ts`) starts Anvil itself,
-builds the contracts, deploys `KeymeshWallet`, registers a second device, then
-creates → signs → executes a real 0.1 ETH transfer through the SDK and asserts:
+builds the contracts, and deploys the full stack (RecoveryManager + owned
+GuardianRegistry + KeymeshWallet). It then asserts:
 
-- recipient balance changed,
-- wallet nonce incremented,
-- `TransactionExecuted` event decoded from the receipt,
-- replaying the same signed payload reverts (`InvalidNonce`),
-- an unregistered key's signature reverts (`UnauthorizedDevice`),
-- a revoked device's signature reverts.
+Phase 1.1 (device-signed transactions):
 
-It uses only the well-known PUBLIC Anvil fixture keys. Never point this script
-at a real network. Port can be changed with `KEYMESH_ANVIL_PORT`.
+- create + sign + execute a real transfer through the SDK,
+- recipient state changed, nonce incremented, event decoded from the receipt,
+- replaying the same signed payload reverts.
+
+Phase 1.2 (guardian recovery), in order:
+
+- bootstrap guardians (3 guardians, quorum 2) and verify the guardian set,
+- manager authority retired post-bootstrap (device registration reverts),
+- recovery request opened by a healthy device naming the replacement device,
+- non-guardian approval rejected; duplicate approval rejected,
+- two guardian approvals reach quorum and arm the timelock,
+- finalization before the deadline reverts,
+- Anvil time advances past the deadline -> status becomes executable,
+- finalization authorizes the new device and revokes the stolen one,
+- transaction signed with the NEW device executes on-chain,
+- old-device signature rejected (`UnauthorizedDevice`),
+- second finalization rejected forever (no replay).
+
+It uses only deterministic LOCAL fixture keys. Never point this script at a
+real network. Port can be changed with `KEYMESH_ANVIL_PORT`.
 
 If Foundry binaries are not on `PATH`, scripts fall back to
 `~/.foundry/bin/{anvil,forge}`.
 
-### Dashboard demo of the same flow
+### Dashboard demos of both flows
 
 ```sh
 anvil            # terminal 1 (or any node on 127.0.0.1:8545)
@@ -72,11 +85,18 @@ forge build --root contracts/ethereum   # once; produces out/ artifacts
 bun run dev      # terminal 2
 ```
 
-Open <http://localhost:3100/demo> and click **Run demo transaction**. The
-Next.js route (`app/api/keymesh-demo/route.ts`) runs entirely server-side: it
-deploys a fresh wallet, funds it, then drives create → sign → execute through
-`@keymesh/sdk` and returns each step for display. Keys are PUBLIC fixture keys
-that never reach the browser. RPC override: `KEYMESH_DEMO_RPC_URL`.
+- <http://localhost:3100/demo> - Phase 1.1: click **Run demo transaction**.
+  The route (`app/api/keymesh-demo/route.ts`) deploys a fresh wallet, funds
+  it, then drives create -> sign -> execute through `@keymesh/sdk`.
+- <http://localhost:3100/recovery> - Phase 1.2: a live guardian-recovery
+  console backed by `app/api/keymesh-recovery/route.ts`. It deploys a fresh
+  stack, registers guardians via bootstrap, and exposes real actions:
+  **Initiate recovery**, **Approve recovery**, **Cancel recovery**,
+  **Finalize recovery**, plus live guardian count, quorum, approvals, status,
+  and timelock state read back from the contracts through the SDK.
+
+Both routes run entirely server-side; keys are PUBLIC local fixtures that
+never reach the browser. RPC override: `KEYMESH_DEMO_RPC_URL`.
 
 ## Workspace map
 
@@ -131,3 +151,4 @@ cargo fmt --check --manifest-path crates/keymesh-core/Cargo.toml
 forge build --root contracts/ethereum && forge test --root contracts/ethereum   # if contracts changed
 bun run integration:anvil                                                       # if SDK/contracts changed
 ```
+

@@ -52,6 +52,17 @@ export const TIMELOCK_DEFAULTS = {
   POLICY_CHANGE_HOURS: 48,
 } as const;
 
+/**
+ * Recovery timelock limits enforced on-chain by RecoveryManager.
+ * MIN mirrors `MIN_TIMELOCK` (1 hour); SUGGESTED is the documented default
+ * for local development (24 hours). One well-defined parameter lives in the
+ * contract per wallet; these constants only document it for TS consumers.
+ */
+export const RECOVERY_TIMELOCK = {
+  MIN_SECONDS: 3_600,
+  SUGGESTED_SECONDS: 86_400,
+} as const;
+
 export const STORAGE_KEYS = {
   WALLET_PREFIX: 'keymesh:wallet:',
   GUARDIAN_PREFIX: 'keymesh:guardian:',

@@ -30,6 +30,7 @@ contract TransactionDigestTest is Test {
     function setUp() public {
         caller = new DigestCaller();
     }
+
     function test_DomainTagMatchesSharedVector() public pure {
         assertEq(
             KeymeshTx.DOMAIN_TAG,
@@ -48,10 +49,7 @@ contract TransactionDigestTest is Test {
             "",
             2000000000
         );
-        assertEq(
-            digest,
-            0xef48434b4ea47252caab3312aef0d299b5970bf1c8f1bd43e71c06791ad0b66a
-        );
+        assertEq(digest, 0xef48434b4ea47252caab3312aef0d299b5970bf1c8f1bd43e71c06791ad0b66a);
     }
 
     function test_Vector2_ZeroValueCalldata() public pure {
@@ -64,10 +62,7 @@ contract TransactionDigestTest is Test {
             hex"deadbeefcafebabe0123456789abcdef",
             2000000001
         );
-        assertEq(
-            digest,
-            0x58f52cacdeacc22a70f0e855c44e50b34348984261d9c6954c48d6f895870b58
-        );
+        assertEq(digest, 0x58f52cacdeacc22a70f0e855c44e50b34348984261d9c6954c48d6f895870b58);
     }
 
     function test_Vector3_MainnetShaped() public pure {
@@ -87,10 +82,7 @@ contract TransactionDigestTest is Test {
             data,
             4102444800
         );
-        assertEq(
-            digest,
-            0x645dc7006dfac3665699314be7d1a4af4f2a502d9b6099b71af0db0d8f1c0a58
-        );
+        assertEq(digest, 0x645dc7006dfac3665699314be7d1a4af4f2a502d9b6099b71af0db0d8f1c0a58);
     }
 
     function test_DataTooLargeReverts() public {

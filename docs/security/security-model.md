@@ -16,50 +16,61 @@
 | Unauthorized key authorizing a transfer        | on-chain device set + ECDSA recovery         | yes (Phase 1.1, single-key devices only) |
 | Reentrancy during execution                   | OpenZeppelin ReentrancyGuard + effects-before-interaction | yes (Phase 1.1) |
 | Single lost/stolen device draining a wallet   | high-value guardian quorum                  | NO — design only; a stolen device key can drain today |
-| Loss of ALL devices                           | guardian recovery with timelock             | state machines implemented + tested (Rust/TS); contract wiring pending |
-| Hostile guardian takeover                     | mandatory ≥7-day public timelock + cancel   | contract skeleton enforces timelock; not wired to devices |
+| Loss of ALL devices                           | guardian recovery with timelock             | YES (Phase 1.2): `replacedDevice = 0` adds a fresh device after quorum + timelock |
+| Hostile recovery takeover                     | mandatory ≥1h timelock + device cancellation | YES (Phase 1.2, RecoveryManager) |
+| Stolen/compromised device keeping authority   | guardian quorum → timelock → atomic replacement | YES (Phase 1.2): old device revoked at finalization |
+| Manager backdoor after initialization          | bootstrap-only role; `ManagerAuthorityRetired` on every manager path | YES (Phase 1.2, tested) |
+| Guardian moving funds / signing transactions   | guardians can only initiate/approve recoveries of their own wallet | YES (Phase 1.2) |
 | Seed-phrase theft                             | no seed phrase exists in the protocol model | by design |
 
 ## What KeyMesh does NOT protect against
 
 1. **Any theft from a compromised device.** Normal transfers need exactly one
-   registered-device signature. There is no velocity limit, no threshold, and
-   no delay: a stolen device key can drain the wallet until revoked. This is
-   the single most important limitation of Phase 1.
-2. **Manager compromise (transitional).** Device registration/revocation is
-   gated on the deployer-chosen `manager` account. Whoever controls it can add
-   their own device. This is an explicit Phase 1 control that guardian/recovery
-   governance must replace before any real value is at stake.
-3. **Full guardian collusion within one timelock window combined with an
-   absent user** (once recovery ships). Timelocks make this *visible*, not
-   impossible.
-4. **Coercion.** Timelocks raise the cost of wrench attacks but cannot prevent
+   registered-device signature. There is no velocity limit and no delay: a
+   stolen device key can drain the wallet until revoked or replaced by
+   recovery. This is the single most important limitation of Phases 1.1–1.2.
+   Recovery revokes the thief's device only AFTER quorum + timelock — faster
+   than that, nothing stops the drain.
+2. **Full guardian collusion within one timelock window combined with an
+   absent user** (and no honest device-holder cancelling). Timelocks make this
+   *visible* and cancellable, not impossible.
+3. **Coercion.** Timelocks raise the cost of wrench attacks but cannot prevent
    them.
-5. **Compromised user operating environment.** A keylogger on the owner's
+4. **Compromised user operating environment.** A keylogger on the owner's
    machine defeats any client-side protocol.
-6. **Chain-level failures.** Re-orgs beyond confirmation assumptions, consensus
+5. **Chain-level failures.** Re-orgs beyond confirmation assumptions, consensus
    failures, or gas market conditions are out of scope.
-7. **Privacy.** All authorization activity is public on-chain.
+6. **Privacy.** All authorization and recovery activity is public on-chain.
 
 ## Current implementation status (do not skip this section)
 
 - **Phase 1.1 works end-to-end**: SDK → canonical `KEYMESH_TX_V1` encoding →
   keccak-256 digest → ECDSA device signature (@noble/curves secp256k1,
   deterministic RFC-6979 nonces, low-s) → Solidity `ECDSA.recover` → device /
-  nonce / expiry / domain validation → execution on local Anvil. Verified by
-  Foundry tests, Rust tests, TypeScript tests sharing fixed vectors, and an
-  automated Anvil integration script (`bun run integration:anvil`).
+  nonce / expiry / domain validation → execution on local Anvil.
+- **Phase 1.2 works end-to-end**: guardian bootstrap (manager bootstraps once,
+  then its authority is permanently retired) → recovery request by guardian or
+  device → duplicate-proof guardian approvals → quorum detection → mandatory
+  per-wallet timelock (inclusive boundary) → permissionless finalization that
+  atomically authorizes the replacement device and revokes the replaced one →
+  old-device signatures rejected, new-device signatures accepted. Verified by
+  96 Foundry tests, 42 Rust tests, TypeScript tests, and the automated Anvil
+  integration script covering all 18 recovery steps (`bun run integration:anvil`).
 - **This is NOT threshold cryptography.** One device = one secp256k1 key.
-  TSS/MPC does not exist anywhere in this repository yet.
+  Guardians are plain addresses with plain approvals. TSS/MPC does not exist
+  anywhere in this repository yet, and no code pretends otherwise.
 - **The Rust crypto module remains a labeled insecure mock** behind the
   `CryptoProvider` trait for protocol paths other than transaction digests;
   Rust produces real keccak-256 canonical digests but performs no signing.
-- **Device-set management uses a transitional manager account**, documented in
-  [wallet-lifecycle.md](../protocol/wallet-lifecycle.md).
-- **Nothing here has been independently audited.** The contract uses audited
+- **Guardian-set management post-bootstrap is device-controlled** (device-signed
+  calls to the RecoveryManager). Devices may remove guardians below quorum,
+  which disables future recoveries until restored — an availability trade-off,
+  documented in [protocol/recovery.md](../protocol/recovery.md).
+- **Nothing here has been independently audited.** The contracts use audited
   building blocks (OpenZeppelin ECDSA, ReentrancyGuard) but the composition
   has not been reviewed by anyone outside this repository.
-- The dashboard still renders mock data; its demo route runs real transactions
+- The dashboard renders mock data except `/demo` (Phase 1.1 transactions) and
+  `/recovery` (Phase 1.2 guardian recovery), both of which run REAL flows
   server-side against local Anvil using PUBLIC fixture keys only.
 
 Any security claim about KeyMesh applies to the *implemented primitives and
@@ -74,24 +85,36 @@ their tests* — not to production readiness.
 3. **Canonical serialization correctness.** Signatures cover canonical bytes;
    a bug in the encoder would be a security bug. It is tested, but treat
    cross-language conformance tests as mandatory before signing ships.
+4. **Bootstrap ceremony honesty.** Whoever holds the manager key between
+   wallet deployment and governance initialization chooses the first guardians
+   AND decides when to initialize. Initialization must happen before real value
+   is entrusted; afterwards the role is provably inert.
 
 ## Recovery assumptions
 
 1. The user can reach their guardians out-of-band when needed.
-2. At least one honest guardian observes a hostile recovery inside the
-   timelock window and cancels it.
+2. At least one honest actor observes a hostile recovery inside the timelock
+   window and cancels it (any authorized device can cancel; guardians express
+   dissent by withholding approvals).
 3. Guardians understand their responsibilities: availability during windows,
    verifying recovery claims through a second channel, never approving under
    urgency pressure (urgency is itself a social-engineering signal).
+4. Quorum configuration reflects genuine redundancy: with N guardians the
+   quorum should be well below N so single points of failure cannot lock the
+   wallet, but above any plausible correlated-compromise set.
 
 ## Guardian assumptions
 
 1. Guardian keys are held competently (hardware wallets recommended).
-2. Guardian weight distribution reflects genuine trust; weights are set by
-   the wallet owner and visible on-chain.
+2. Guardian sets reflect genuine trust; they are set by the wallet's devices
+   (after bootstrap) and visible on-chain. Guardians are unweighted: one
+   guardian = one approval.
 3. Guardians are independent — correlated compromise (same password manager,
    same jurisdiction, same household) undermines threshold math. Guidance:
    diversify guardians across infrastructure and relationships.
+4. A guardian's authority is strictly scoped: initiate/approve recoveries for
+   their own wallet only. They cannot cancel, cannot sign transactions, and
+   cannot affect other wallets (tested).
 
 ## Cryptographic assumptions
 

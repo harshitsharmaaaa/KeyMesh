@@ -1,10 +1,11 @@
 # KeyMesh Protocol Overview
 
-> **Status: Phase 1.1 implemented + design specification.** The device-signed
-> Ethereum transaction path is real (see
-> [canonical-transaction.md](canonical-transaction.md)). Guardian/recovery
-> enforcement on-chain remains design-stage; anything not yet implemented is
-> marked explicitly.
+> **Status: Phases 1.1 + 1.2 implemented + design specification.** The
+> device-signed Ethereum transaction path (see
+> [canonical-transaction.md](canonical-transaction.md)) AND guardian-governed
+> recovery with quorum + timelock (see [recovery.md](recovery.md)) are real.
+> Transaction-policy enforcement remains design-stage; anything not yet
+> implemented is marked explicitly.
 
 ## Protocol model
 
@@ -17,9 +18,9 @@ across devices and guardians.
 | ----------- | --------------------------------------------------------------------------- |
 | Owner       | The human controlling the wallet through devices                            |
 | Device      | An authorized endpoint (laptop, phone, hardware key) with its own keypair    |
-| Guardian    | A trusted party (address or contract) with an approval weight               |
+| Guardian    | A trusted address that can initiate/approve recoveries of its wallet only    |
 | Policy      | Per-wallet rules mapping action classes to required weights + timelocks     |
-| Contracts   | On-chain enforcement: KeymeshWallet, GuardianRegistry, RecoveryManager, PolicyManager |
+| Contracts   | On-chain enforcement: KeymeshWallet, RecoveryManager (+ owned GuardianRegistry), PolicyManager |
 
 ### Core lifecycle (conceptual)
 
@@ -55,18 +56,21 @@ Recovery
 
 ### Guarantees intended by the design (not all enforced yet)
 
-- No single device can authorize high-value actions alone.
-- Guardians cannot move funds; they can only approve/reject/cancel.
+- No single device can authorize high-value actions alone (policy layer: Phase 1.3).
+- Guardians cannot move funds; they can only initiate/approve recoveries of
+  their own wallet — enforced since Phase 1.2.
 - A hostile recovery takes at least one timelock window, during which any
-  active guardian can cancel it.
+  authorized device can cancel it — enforced since Phase 1.2.
 - All state transitions are deterministic and mirrored between the Rust core,
   TypeScript protocol package, and Solidity contracts.
 
-**Enforced today (Phase 1.1):** a transaction executes only when its ECDSA
-signature recovers to a registered device over the canonical
-`KEYMESH_TX_V1` digest, with wallet/chainId binding, sequential nonce, and
-inclusive expiry checked on-chain. Cross-language conformance vectors pin the
-format in all three implementations.
+**Enforced today:** transactions execute only when their ECDSA signature
+recovers to a registered device over the canonical `KEYMESH_TX_V1` digest,
+with wallet/chainId binding, sequential nonce, and inclusive expiry
+(Phase 1.1). Device-set changes require guardian quorum plus a mandatory
+timelock; the bootstrap manager's authority is permanently retired once
+recovery governance is initialized (Phase 1.2). Cross-language conformance
+vectors pin the transaction format in all three implementations.
 
 ## Serialization & signing
 

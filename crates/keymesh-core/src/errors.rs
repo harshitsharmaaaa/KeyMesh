@@ -16,6 +16,8 @@ pub enum KeymeshError {
     NotFound(String),
     /// A quorum/threshold requirement was not met.
     ThresholdNotMet { required: usize, actual: usize },
+    /// The same actor approved the same recovery request twice.
+    DuplicateApproval(String),
     /// A timelock has not elapsed yet.
     TimelockActive { remaining_seconds: u64 },
     /// A signed transaction's expiry has passed.
@@ -35,6 +37,9 @@ impl fmt::Display for KeymeshError {
             KeymeshError::NotFound(what) => write!(f, "not found: {what}"),
             KeymeshError::ThresholdNotMet { required, actual } => {
                 write!(f, "threshold not met: required {required}, got {actual}")
+            }
+            KeymeshError::DuplicateApproval(who) => {
+                write!(f, "duplicate approval: {who} already approved")
             }
             KeymeshError::TimelockActive { remaining_seconds } => {
                 write!(f, "timelock active: {remaining_seconds} seconds remaining")

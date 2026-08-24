@@ -2,31 +2,38 @@
 pragma solidity ^0.8.24;
 
 /// @title IGuardianRegistry
-/// @notice Tracks guardians and their weights per KeyMesh wallet.
+/// @notice Tracks the set of active guardians per KeyMesh wallet.
+/// @dev Phase 1.2: guardians are unweighted (one guardian = one approval).
+///      State mutations are restricted to the owning RecoveryManager, which is
+///      the single policy enforcement point (bootstrap by the wallet manager,
+///      then device-signed management through KeymeshWallet.execute).
 interface IGuardianRegistry {
-    event GuardianAdded(address indexed wallet, address indexed guardian, uint96 weight);
+    event GuardianAdded(address indexed wallet, address indexed guardian);
     event GuardianRemoved(address indexed wallet, address indexed guardian);
 
-    error GuardianAlreadyActive(address guardian);
-    error GuardianNotActive(address guardian);
-    error InvalidWeight();
+    /// @dev `guardian` is not an active guardian of `wallet`.
+    error GuardianNotActive(address wallet, address guardian);
 
-    /// @notice Registers `guardian` for `wallet` with a weighted vote.
-    /// @dev Only the wallet contract itself may modify its guardian set.
-    function addGuardian(address wallet, address guardian, uint96 weight) external;
+    /// @dev `guardian` already is an active guardian of `wallet`.
+    error GuardianAlreadyActive(address wallet, address guardian);
 
-    /// @notice Removes an active guardian from `wallet`.
+    /// @dev Caller is not the owning RecoveryManager.
+    error NotRecoveryManager(address caller);
+
+    /// @notice Registers `guardian` for `wallet`. RecoveryManager only.
+    function addGuardian(address wallet, address guardian) external;
+
+    /// @notice Removes an active guardian from `wallet`. RecoveryManager only.
     function removeGuardian(address wallet, address guardian) external;
 
     /// @notice True when `guardian` is an active guardian of `wallet`.
     function isGuardian(address wallet, address guardian) external view returns (bool);
 
-    /// @notice Current weight of `guardian` within `wallet`'s set (0 if inactive).
-    function weightOf(address wallet, address guardian) external view returns (uint256);
-
-    /// @notice Sum of active guardian weights for `wallet`.
-    function totalWeight(address wallet) external view returns (uint256);
-
     /// @notice Number of active guardians for `wallet`.
     function guardianCount(address wallet) external view returns (uint256);
+
+    /// @notice Active guardians of `wallet` in registration order.
+    ///         Bounded iteration in a VIEW only; never used inside a
+    ///         security-critical transaction path.
+    function getGuardians(address wallet) external view returns (address[] memory);
 }

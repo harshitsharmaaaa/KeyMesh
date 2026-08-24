@@ -2,20 +2,25 @@
 pragma solidity ^0.8.24;
 
 /// @title IKeymeshWallet
-/// @notice Device-authorized KeyMesh wallet: signature-verified execution.
-/// @dev Phase 1.1 — single-device ECDSA authorization over the canonical
-///      KEYMESH_TX_V1 digest. The signer set abstraction (mapping of devices)
-///      is designed to admit threshold/TSS signers in a later phase without
-///      changing execute().
+/// @notice Device-authorized KeyMesh wallet: signature-verified execution plus
+///         a guardian-governed device-replacement entry point.
+/// @dev Phase 1.2 authority model:
+///
+///      Normal transactions : registered-device ECDSA over KEYMESH_TX_V1.
+///      Device-set changes  : `recoveryManager` only (guardian quorum +
+///                            timelock), or the bootstrap manager BEFORE
+///                            recovery governance is initialized.
+///
+///      The manager is a BOOTSTRAP-ONLY role. Once `initializeRecoveryGovernance`
+///      has been called by the RecoveryManager, the manager has no authority
+///      whatsoever (see `ManagerAuthorityRetired`). Guardians never sign
+///      normal transactions; devices never approve recoveries.
 interface IKeymeshWallet {
     event DeviceRegistered(address indexed device, uint64 registeredAt);
     event DeviceRevoked(address indexed device, uint64 revokedAt);
+    event RecoveryGovernanceInitialized(uint64 initializedAt);
     event TransactionExecuted(
-        uint256 indexed nonce,
-        address indexed device,
-        address indexed to,
-        uint256 value,
-        bytes data
+        uint256 indexed nonce, address indexed device, address indexed to, uint256 value, bytes data
     );
 
     // --- device management ---
@@ -25,6 +30,13 @@ interface IKeymeshWallet {
     error NotRegistered(address device);
     error LastDeviceRemoval();
 
+    // --- bootstrap / recovery wiring ---
+    /// @dev The bootstrap manager attempted an operation after recovery
+    ///      governance was initialized; the role is retired at that point.
+    error ManagerAuthorityRetired(address manager);
+    /// @dev Caller is not this wallet's designated RecoveryManager.
+    error NotRecoveryManager(address caller);
+
     // --- execution / validation ---
     error WrongWallet(address provided);
     error WrongChain(uint256 provided);
@@ -33,11 +45,36 @@ interface IKeymeshWallet {
     error UnauthorizedDevice(address signer);
     error ExecutionFailed(bytes returnData);
 
-    /// @notice Registers `device`. Phase 1: only the wallet manager may call.
+    /// @notice Address allowed to call {applyRecoveredDevice} and
+    ///         {initializeRecoveryGovernance} (the RecoveryManager contract).
+    function recoveryManager() external view returns (address);
+
+    /// @notice True once guardian recovery governance has been bootstrapped;
+    ///         afterwards the bootstrap manager holds no authority.
+    function recoveryInitialized() external view returns (bool);
+
+    /// @notice Bootstrap-only transitional account; inert after initialization.
+    function manager() external view returns (address);
+
+    /// @notice Registers `device`. Callable ONLY by the bootstrap manager and
+    ///         ONLY before recovery governance is initialized.
     function registerDevice(address device) external;
 
-    /// @notice Revokes `device`. Allowed for the manager or the device itself.
+    /// @notice Revokes `device`. Allowed for the bootstrap manager before
+    ///         initialization, or by the device itself at any time.
     function revokeDevice(address device) external;
+
+    /// @notice Applies a finalized guardian recovery atomically:
+    ///         authorize `newDevice`, then revoke `replacedDevice` when it is
+    ///         not the zero address. Only the RecoveryManager may call.
+    /// @param replacedDevice Device to revoke, or address(0) when every
+    ///        previous device was already lost (pure addition).
+    /// @param newDevice Replacement device to authorize.
+    function applyRecoveredDevice(address replacedDevice, address newDevice) external;
+
+    /// @notice Marks recovery governance live; retires the bootstrap manager.
+    ///         Only the RecoveryManager may call (during bootstrap).
+    function initializeRecoveryGovernance() external;
 
     /// @notice True when `device` can currently authorize transactions.
     function isDeviceAuthorized(address device) external view returns (bool);
