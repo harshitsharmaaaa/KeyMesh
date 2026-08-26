@@ -1,18 +1,18 @@
 # KeyMesh
 
 > Non-custodial digital asset key management, transaction authorization, and
-> recovery — using threshold-style cryptography, guardian quorums, and
-> timelocked recovery. Ethereum-first.
+> recovery — using device signatures, guardian quorums, and timelocked
+> recovery. Ethereum-first.
 
-**Status: Phases 1.1-1.3 implemented; prototype overall.** Two real
+**Status: Phases 1.1-1.4 implemented; prototype overall.** Two real
 end-to-end paths exist: device-signed transactions (SDK -> canonical
 `KEYMESH_TX_V1` encoding -> keccak digest -> ECDSA device signature ->
 Solidity recovery -> execution on local Anvil) and guardian-governed recovery
 (guardian bootstrap -> recovery request -> quorum approvals -> mandatory
 timelock -> atomic device replacement, old device revoked). The transitional
 manager account is now bootstrap-only and provably powerless after
-initialization. Everything else (transaction-policy enforcement, threshold
-signing) is scaffolding with honest maturity labels. This codebase is **not
+initialization. Phase 1.3 policy enforcement is live, and Phase 1.4 adds
+security hardening, fuzzing, and invariant coverage. This codebase is **not
 audited** and **not production-ready**; threshold cryptography (TSS/MPC) does
 **not** exist yet. See
 [docs/security/security-model.md](docs/security/security-model.md).

@@ -1,6 +1,6 @@
 # KeyMesh Architecture Overview
 
-> **Status: Phases 1.1-1.3 implemented** — two real end-to-end paths
+> **Status: Phases 1.1-1.4 implemented** — two real end-to-end paths
 > (device-signed transactions AND guardian-quorum timelocked recovery with
 > device replacement) plus prototype scaffolding for everything else.
 > Components are labeled by maturity; nothing here is production-ready or
@@ -95,6 +95,7 @@ from a registered device's signature over the canonical digest.
 | Dashboard             | prototype   | mock pages + real server-side demo routes (/demo txs, /recovery guardian flow) |
 | Rust core             | prototype   | recovery/policy FSMs mirror contracts exactly + TX codec; mock crypto |
 | PolicyManager         | implemented (Phase 1.3) | deterministic classification + per-digest guardian transaction authorizations; enforced inside execute() |
+| Security hardening    | implemented (Phase 1.4) | invariant/fuzz coverage, security docs, and review checklist |
 | Threshold signing/MPC | not started | later phase; recovery governance deliberately independent  |
 | Solana adapter        | not started | later phase; chain-kind abstraction already exists         |
 

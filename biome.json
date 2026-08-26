@@ -18,6 +18,7 @@
       "**/coverage/**",
       "**/cache/**",
       "**/broadcast/**",
+      "contracts/ethereum/lib/**",
       "**/bun.lock",
       "**/*.svg"
     ]
