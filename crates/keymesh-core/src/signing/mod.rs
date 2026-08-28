@@ -10,6 +10,8 @@
 //! insecure [`MockCryptoProvider`](crate::crypto::MockCryptoProvider). It is
 //! for tests and local development ONLY.
 
+pub mod tss;
+
 use crate::crypto::{CryptoProvider, MockCryptoProvider, PrivateKeyBytes, SignatureBytes};
 use crate::errors::KeymeshError;
 

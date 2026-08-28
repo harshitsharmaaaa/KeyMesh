@@ -8,3 +8,4 @@ export * from './recovery-onchain';
 export * from './policy';
 export * from './transaction';
 export * from './validation';
+export * from './signing';
