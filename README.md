@@ -186,10 +186,11 @@ See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 
 **Phase 2 - Advanced cryptography & multi-chain**
 1. **Phase 2.1 — TSS/MPC Architecture & Cryptographic Design — DESIGNED** — threshold ECDSA strategy (CGGMP21), adversary/threat models, key lifecycle, signing protocol, and invariants. See [TSS Architecture](docs/architecture/tss-mpc-architecture.md), [TSS Signing Protocol](docs/protocol/tss-signing-protocol.md), [ADR-001](docs/architecture/decisions/ADR-001-tss-strategy.md), [TSS Threat Model](docs/security/tss-threat-model.md), [TSS Invariants](docs/security/tss-invariants.md), [TSS Review Checklist](docs/security/tss-review-checklist.md), [TSS Testing Plan](docs/security/tss-testing-plan.md).
-2. **Phase 2.2 — Threshold ECDSA Cryptographic Prototype — PROTOTYPED (isolated, not production)** — 2-of-3 DKG + threshold signing producing standard low-s `(r,s,v)` over `KEYMESH_TX_V1`, verified via `ecrecover` in `contracts/ethereum/test/TSSPrototype.t.sol`. Isolated crate `crates/keymesh-tss-proto` (`k256`); no `KeymeshWallet`/`PolicyManager`/`RecoveryManager` changes. See prototype docs and `docs/security/tss-invariants.md` (Phase 2.2 status).
-3. Solana adapter (chain-kind abstraction already exists)
-4. Advanced cryptography: key-share rotation, proactive refresh (DESIGNED, NOT IMPLEMENTED in prototype)
-5. Security hardening: audits, fuzzing campaigns, formal specs where warranted
+2. **Phase 2.2 — Threshold ECDSA Cryptographic Prototype — PROTOTYPED (isolated, k256 simulation)** — 2-of-3 DKG + threshold signing producing standard low-s `(r,s,v)` over `KEYMESH_TX_V1`, verified via `ecrecover` in `contracts/ethereum/test/TSSPrototype.t.sol`. Isolated crate `crates/keymesh-tss-proto` (`k256`); no `KeymeshWallet`/`PolicyManager`/`RecoveryManager` changes. See `docs/security/tss-invariants.md` (Phase 2.2 status).
+3. **Phase 2.3 — Real Threshold ECDSA via synedrion — REAL PROTOTYPE (isolated, not production)** — `crates/keymesh-tss` using `synedrion 0.3` CGGMP'24 (`KeyInit` → `KeyResharing` → `AuxGen` → `InteractiveSigning` via `manul::TestRuntime`), 2-of-3, no application-level reconstruction, low-s + `ecrecover` verified. Heavy Paillier tests are Linux CI only (`.github/workflows/tss.yml`). No `KeymeshWallet`/`KEYMESH_TX_V1` changes. See `crates/keymesh-tss/README.md` and `docs/security/tss-invariants.md` (Phase 2.3).
+4. Solana adapter (chain-kind abstraction already exists)
+5. Advanced cryptography: key-share rotation, proactive refresh (DESIGNED in Phase 2.1; refresh via `KeyRefresh` exists in synedrion but not wired)
+6. Security hardening: audits, fuzzing campaigns, formal specs where warranted
 ## License
 
 MIT OR Apache-2.0 (to be finalized).

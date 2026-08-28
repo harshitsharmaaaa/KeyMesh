@@ -190,6 +190,32 @@ No invariant above is implemented, tested, audited, or formally verified at Phas
 
 **Remaining:** No invariant is AUDITED or FORMALLY VERIFIED. Mapping to `docs/security/tss-testing-plan.md` categories is preserved.
 
+## Phase 2.3 Real Threshold-ECDSA Status
+
+> **Maturity:** REAL PROTOTYPE (isolated `crates/keymesh-tss` via `synedrion 0.3` CGGMP'24), NOT PRODUCTION, NOT AUDITED, NOT FORMALLY VERIFIED.
+> **Separation:** `crates/keymesh-tss-proto` remains as Phase 2.2 simulation for comparison (see ADR-001). Real signing operates on distributed `ThresholdKeyShare`/`AuxInfo` via `manul::TestRuntime` InteractiveSigning — no application-level reconstruction.
+
+| ID | Invariant | Phase 2.3 Status | Evidence |
+|----|-----------|------------------|----------|
+| TSS-INV-01 | fewer than threshold cannot sign | **TESTED** | `tests_real::threshold_2of3_all_pairs_succeed_single_fails_real` — `setup_2of3()` + `threshold_sign` with 1 share → Err |
+| TSS-INV-02 | coordinator cannot sign alone | **TESTED** | Coordinator holds no share; `threshold_sign` requires ≥t `ThresholdKeyShare` + `AuxInfo`; single-share → Err |
+| TSS-INV-03 | digest binding | **TESTED** | `final_signature_low_s_and_recovers_real`, `digest_binding_wrong_digest_rejected` — `verify_signature` fails on wrong digest |
+| TSS-INV-04 | session cannot be replayed | **TESTED** | `session_replay_rejected` — `derive_session_id` includes wallet/chainId/nonce/digest/policyVersion/random; mismatch → Err |
+| TSS-INV-05 | no application-level key reconstruction | **TESTED** | No public `reconstruct_secret`/`combine_shares` in `crates/keymesh-tss/src`; `grep -r reconstruct` yields only `#[cfg(test)]` in proto; signing uses `ThresholdKeyShare`/`AuxInfo` distributed state; documented F-0003 remains historical, new path does not reconstruct |
+| TSS-INV-06 | participant identity binding | **TESTED** | `participant_identity_duplicate_fails` — duplicate/unknown → Err; synedrion `TestVerifier` per participant |
+| TSS-INV-07 | address stability | **TESTED** | `ethereum_address_stable_across_signing`, `dkg_succeeds_and_group_key_stable` — group VK same across participants and signings |
+| TSS-INV-08 | refresh preservation | **DESIGNED — NOT IMPLEMENTED** | Refresh via `KeyRefresh` exists in synedrion but not wired in prototype; honestly NOT TESTED |
+| TSS-INV-09 | abort terminality | **TESTED** | `abort_terminal` — monotonic `SigningSessionStatus`; `transport` checks |
+| TSS-INV-10 | digest substitution resistance | **TESTED** | `digest_binding_wrong_digest_rejected` — session binding prevents substitution |
+| TSS-INV-11 | malicious participant handling | **TESTED** | synedrion provides identifiable abort; prototype tests duplicate/wrong-round/malformed via `transport` + `threshold_sign` Err |
+| TSS-INV-12 | signing-session uniqueness | **TESTED** | `session_replay_rejected`, `transport_simulator_checks` — session_id + digest binding |
+| TSS-INV-13 | policy-version binding | **TESTED** | `SessionBinding.policy_version` in `derive_session_id`; signing checks |
+| TSS-INV-14 | canonical digest compatibility | **TESTED** | `keymesh_digest()` is `0xef48…` KEYMESH_TX_V1 vector 1; `verify_signature` + `TSSPrototype.t.sol` pin |
+| TSS-INV-15 | no downgrade | **DESIGNED** | PolicyManager unchanged; signing does not bypass `evaluateAuthorization` |
+| TSS-INV-16 | governed participant-set changes | **DESIGNED** | Resharing exists in synedrion (`KeyResharing`) but not wired to `RecoveryManager`; interface placeholder |
+
+Heavy synedrion DKG/signing tests are `#[ignore]` on Windows local — run on Linux CI (`cargo test -- --ignored` in `.github/workflows/tss.yml`). No invariant is AUDITED or FORMALLY VERIFIED.
+
 ## Testing Plan Reference
 
 Each invariant maps to tests in `docs/security/tss-testing-plan.md`:

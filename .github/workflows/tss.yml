@@ -1,0 +1,45 @@
+name: tss
+
+on:
+  push:
+    paths:
+      - 'crates/keymesh-tss/**'
+      - 'crates/keymesh-tss-proto/**'
+      - '.github/workflows/tss.yml'
+  pull_request:
+    paths:
+      - 'crates/keymesh-tss/**'
+      - 'crates/keymesh-tss-proto/**'
+
+jobs:
+  tss-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: fmt check (keymesh-tss)
+        run: cargo fmt --manifest-path crates/keymesh-tss/Cargo.toml --check
+      - name: fmt check (keymesh-tss-proto)
+        run: cargo fmt --manifest-path crates/keymesh-tss-proto/Cargo.toml --check
+      - name: cargo test (keymesh-tss light)
+        run: cargo test --manifest-path crates/keymesh-tss/Cargo.toml --locked
+      - name: cargo test (keymesh-tss heavy — real DKG/signing)
+        run: cargo test --manifest-path crates/keymesh-tss/Cargo.toml --locked -- --ignored --test-threads=1
+      - name: cargo test (keymesh-tss-proto)
+        run: cargo test --manifest-path crates/keymesh-tss-proto/Cargo.toml --locked
+      - name: clippy (keymesh-tss)
+        run: cargo clippy --manifest-path crates/keymesh-tss/Cargo.toml --all-targets --locked -- -D warnings
+      - name: clippy (keymesh-tss-proto)
+        run: cargo clippy --manifest-path crates/keymesh-tss-proto/Cargo.toml --all-targets --locked -- -D warnings
+
+  tss-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: check builds on Windows
+        run: cargo check --manifest-path crates/keymesh-tss/Cargo.toml
+      - name: light tests only (heavy ignored)
+        run: cargo test --manifest-path crates/keymesh-tss/Cargo.toml --locked
