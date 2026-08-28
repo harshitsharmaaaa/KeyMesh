@@ -10,6 +10,7 @@
 pub mod dkg;
 pub mod errors;
 pub mod participant;
+pub mod provider;
 pub mod session;
 pub mod signing;
 pub mod tests_real;
