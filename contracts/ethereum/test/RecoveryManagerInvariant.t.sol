@@ -147,7 +147,7 @@ contract RecoveryManagerInvariantTest is Test {
         recovery.approveRecovery(address(wallet));
     }
 
-    /// @notice Fuzz: timelock boundary tests
+/// @notice Fuzz: timelock boundary tests
     function testFuzz_TimelockBoundary(uint64 offset) public {
         vm.assume(offset < 200);
 
@@ -155,8 +155,8 @@ contract RecoveryManagerInvariantTest is Test {
         _approve(g1);
         _approve(g2);
 
-        // At quorum, get executeAfter
-        (,,,, uint64 executeAfter,,,,) = recovery.requestById(recoveryId);
+        // At quorum, get executeAfter (position 6 in requestById tuple, 9 total elements)
+        (,,,,, uint64 executeAfter,,,) = recovery.requestById(recoveryId);
 
         // Test before timelock
         if (offset == 0) {
@@ -230,7 +230,8 @@ contract RecoveryManagerInvariantTest is Test {
             recoveryId = _initiateRecovery(device, device2);
             _approve(g1);
             _approve(g2);
-            (,,,, uint64 executeAfter,,,,) = recovery.requestById(recoveryId);
+            // At quorum, get executeAfter (position 6 in requestById tuple, 9 total elements)
+            (,,,,, uint64 executeAfter,,,) = recovery.requestById(recoveryId);
             vm.warp(executeAfter + 1);
             recovery.finalizeRecovery(address(wallet));
             assertEq(uint8(recovery.statusOf(address(wallet))), uint8(IRecoveryManager.RecoveryStatus.Executed));
@@ -256,7 +257,8 @@ contract RecoveryManagerInvariantTest is Test {
         uint256 recoveryId = _initiateRecovery(device, device2);
         _approve(g1);
         _approve(g2);
-        (,,,, uint64 executeAfter,,,,) = recovery.requestById(recoveryId);
+        // At quorum, get executeAfter (position 6 in requestById tuple, 9 total elements)
+        (,,,,, uint64 executeAfter,,,) = recovery.requestById(recoveryId);
         vm.warp(executeAfter + 1);
 
         recovery.finalizeRecovery(address(wallet));
@@ -318,8 +320,8 @@ contract RecoveryManagerInvariantTest is Test {
         uint256 recoveryId = _initiateRecovery(address(0), device2);
         _approve(g1);
         _approve(g2);
-
-        (,,,, uint64 executeAfter,,,,) = recovery.requestById(recoveryId);
+        // At quorum, get executeAfter (position 6 in requestById tuple, 9 total elements)
+        (,,,,, uint64 executeAfter,,,) = recovery.requestById(recoveryId);
         vm.warp(executeAfter + 1);
         recovery.finalizeRecovery(address(wallet));
 
@@ -328,20 +330,21 @@ contract RecoveryManagerInvariantTest is Test {
         assertEq(wallet.deviceCount(), 2, "both devices present");
     }
 
-    /// @notice Fuzz: cross-wallet isolation
-    function testFuzz_CrossWalletIsolation(uint256 seed) public {
+    /// @notice Cross-wallet isolation
+    function test_CrossWalletIsolation() public {
         // Create wallet B
+        vm.prank(stranger);
         KeymeshWallet walletB = new KeymeshWallet(stranger, device2, address(recovery), address(0));
         address[] memory guardiansB = new address[](1);
-        guardiansB[0] = g3;
+        guardiansB[0] = g4;
         vm.prank(stranger);
         recovery.bootstrapRecoveryGovernance(address(walletB), guardiansB, 1, TIMELOCK);
 
         // Start recovery on wallet A
         uint256 idA = _initiateRecovery(device, device2);
 
-        // Try to approve wallet A's recovery as guardian of wallet B
-        vm.prank(stranger);
+        // Initiate recovery on wallet B via its device
+        vm.prank(device2);
         recovery.initiateRecovery(address(walletB), device2, g4);
         uint256 idB = recovery.latestRecoveryIdOf(address(walletB));
 
@@ -350,15 +353,16 @@ contract RecoveryManagerInvariantTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IRecoveryManager.NotRegisteredGuardian.selector, g1));
         recovery.approveRecovery(address(walletB));
 
-        // g3 (guardian of B) cannot approve wallet A's recovery
-        vm.prank(g3);
-        vm.expectRevert(abi.encodeWithSelector(IRecoveryManager.NotRegisteredGuardian.selector, g3));
+        // g4 (guardian of B) cannot approve wallet A's recovery
+        vm.prank(g4);
+        vm.expectRevert(abi.encodeWithSelector(IRecoveryManager.NotRegisteredGuardian.selector, g4));
         recovery.approveRecovery(address(wallet));
 
         // Complete wallet A's recovery - wallet B should be untouched
         _approve(g1);
         _approve(g2);
-        (,,,, uint64 executeAfterA,,,,) = recovery.requestById(idA);
+        // At quorum, get executeAfter (position 6 in requestById tuple, 9 total elements)
+        (,,,,, uint64 executeAfterA,,,) = recovery.requestById(idA);
         vm.warp(executeAfterA);
         recovery.finalizeRecovery(address(wallet));
 
@@ -412,7 +416,8 @@ contract RecoveryManagerInvariantTest is Test {
         assertEq(uint8(recovery.statusOf(address(wallet))), uint8(IRecoveryManager.RecoveryStatus.QuorumReached));
 
         // QuorumReached -> Executable (time passes)
-        (,,,, uint64 executeAfter,,,,) = recovery.requestById(id);
+        // Position 6 in requestById tuple is executeAfter (9 total elements)
+        (,,,,, uint64 executeAfter,,,) = recovery.requestById(id);
         vm.warp(executeAfter + 1);
         assertEq(uint8(recovery.statusOf(address(wallet))), uint8(IRecoveryManager.RecoveryStatus.Executable));
 
@@ -456,7 +461,8 @@ contract RecoveryManagerInvariantTest is Test {
         _approve(g2);
         assertEq(uint8(recovery.statusOf(address(wallet))), uint8(IRecoveryManager.RecoveryStatus.QuorumReached));
 
-        (,,,, uint64 executeAfter,,,,) = recovery.requestById(id);
+        // Position 6 in requestById tuple is executeAfter (9 total elements)
+        (,,,,, uint64 executeAfter,,,) = recovery.requestById(id);
         vm.warp(executeAfter - 1);
         vm.expectRevert(abi.encodeWithSelector(IRecoveryManager.TimelockNotElapsed.selector, executeAfter, executeAfter - 1));
         recovery.finalizeRecovery(address(wallet));

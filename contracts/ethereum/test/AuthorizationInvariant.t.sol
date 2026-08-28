@@ -49,6 +49,9 @@ contract AuthorizationInvariantTest is Test {
 
         wallet.registerDevice(device2);
 
+        // Fund wallet for value transfers
+        deal(address(wallet), 100 ether);
+
         address[] memory guardians = new address[](3);
         guardians[0] = g1;
         guardians[1] = g2;
@@ -235,14 +238,16 @@ contract AuthorizationInvariantTest is Test {
         assertEq(wallet.getNonce(), nonce + 1, "double execution must not advance nonce");
     }
 
-    /// @notice Fuzz: authorization cannot be copied between wallets
-    function testFuzz_CannotCopyBetweenWallets() public {
+    /// @notice Authorization cannot be copied between wallets
+    function test_CannotCopyBetweenWallets() public {
         // Create wallet B
+        vm.prank(address(0xBEEF));
         KeymeshWallet walletB = new KeymeshWallet(
             address(0xBEEF), device, address(recovery), address(policy)
         );
         address[] memory guardiansB = new address[](1);
         guardiansB[0] = g3;
+        vm.prank(address(0xBEEF));
         recovery.bootstrapRecoveryGovernance(address(walletB), guardiansB, 1, 24 hours);
 
         bytes32 digestA = KeymeshTx.digest(
@@ -445,7 +450,7 @@ contract AuthorizationInvariantTest is Test {
 
     /// @notice Fuzz: failed execution preserves authorization
     function testFuzz_FailedExecutionPreservesAuth(uint256 seed) public {
-        address reverter = vm.addr(0xDEADBEEF);
+        address reverter = address(new RevertingTarget());
         address sink = _deploySink();
         uint256 nonce = wallet.getNonce();
         bytes32 digest = KeymeshTx.digest(
@@ -565,4 +570,14 @@ contract AuthorizationInvariantTest is Test {
 contract PayableSink {
     receive() external payable {}
     fallback() external payable {}
+}
+
+/// @notice Helper contract that always reverts on receive/fallback
+contract RevertingTarget {
+    receive() external payable {
+        revert("RevertingTarget: intentional revert");
+    }
+    fallback() external payable {
+        revert("RevertingTarget: intentional revert");
+    }
 }
