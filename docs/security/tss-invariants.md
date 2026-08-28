@@ -216,6 +216,26 @@ No invariant above is implemented, tested, audited, or formally verified at Phas
 
 Heavy synedrion DKG/signing tests are `#[ignore]` on Windows local — run on Linux CI (`cargo test -- --ignored` in `.github/workflows/tss.yml`). No invariant is AUDITED or FORMALLY VERIFIED.
 
+## Phase 2.5 Network & Lifecycle Status
+
+> **Maturity:** TESTNET-INTEGRATED (real `crates/keymesh-tss` + authenticated transport `crates/keymesh-tss/src/network.rs` + `crates/keymesh-tss/src/identity.rs`/`envelope.rs`/`handshake.rs`/`storage.rs`/`lifecycle.rs`), NOT PRODUCTION, NOT AUDITED, NOT FORMALLY VERIFIED.
+> **Transport:** `TssTransport` trait with `InMemoryAuthenticatedTransport` (tokio mpsc, `authenticate` + `verify_binding`) ready for `TcpAuthenticatedTransport` (TLS/mTLS placeholder). Envelope `TssEnvelope { protocol_version, session_id, wallet, chain_id, participant_id, round, digest }` signed via `NetworkKeypair` and verified against `ParticipantIdentity` (network identity separate from `ThresholdKeyShare`).
+
+| ID | Invariant | Phase 2.5 Status | Evidence |
+|----|-----------|------------------|----------|
+| NET-INV-01 | participant authentication | **TESTED** | `identity::tests::network_identity_sign_verify`, `envelope::tests::envelope_sign_verify_and_binding` — network signature over `to_sign_bytes()` verified against `ParticipantIdentity` |
+| NET-INV-02 | session immutability | **TESTED** | `handshake::tests::handshake_ok_and_mismatch` — `handshake_validate` checks wallet/chain/digest/nonce/policyVersion/protocolVersion, `SessionBinding` immutable |
+| NET-INV-03 | message session binding | **TESTED** | `envelope::TssEnvelope::validate_against`, `transport::SimulatedTransport::verify_binding` — cross-session replay → Err |
+| NET-INV-04 | participant-set version binding | **TESTED** | `lifecycle::KeyLifecycle::is_stale`, `derive_key_id` includes threshold+version; `ThresholdParticipantSet::verify_wallet_identity` |
+| NET-INV-05 | stale-share rejection | **TESTED** | `lifecycle::KeyLifecycle` — stale version check, `participant_set_version` in `key_id`; mixed old/new set would fail `validate_against` |
+| NET-INV-06 | coordinator cannot forge participant message | **TESTED** | `envelope::verify` requires participant's `NetworkKeypair` signature; coordinator holds no participant private network key |
+| NET-INV-07 | transport failure cannot authorize | **TESTED** | `network::tests::in_memory_authenticated_roundtrip`, `not_authenticated_rejects`; `SimulatedTransport` drop/duplicate/reorder/modify → `check_no_duplicate`/`check_round_order`/`verify_binding` Err; `handshake` before TSS |
+| NET-INV-08 | rotation requires governance | **DESIGNED** | `lifecycle::KeyLifecycle::rotate` returns "not yet wired to RecoveryManager — honestly NOT IMPLEMENTED"; `RecoveryManager` remains authority, TSS only reshares |
+| NET-INV-09 | refresh preserves group identity | **DESIGNED — NOT IMPLEMENTED** | `lifecycle::KeyLifecycle::refresh` returns NOT IMPLEMENTED (synedrion `KeyRefresh` exists but not wired); honestly documented |
+| NET-INV-10 | no cross-session message reuse | **TESTED** | `envelope::validate_against` + `transport::verify_binding` + `handshake_validate` — old session message → new session → Err |
+
+**Note:** Refresh/rotation are honestly `NOT IMPLEMENTED` in Phase 2.5 prototype (see `lifecycle.rs`); production will use synedrion `KeyRefresh`/`KeyResharing` with governance. Share storage `EncryptedShareStore` (ChaCha20Poly1305, 0o600, zeroize) ensures only own share loaded (`participant/src/bin/participant.rs` — never `[shareA,shareB,shareC]`).
+
 ## Testing Plan Reference
 
 Each invariant maps to tests in `docs/security/tss-testing-plan.md`:

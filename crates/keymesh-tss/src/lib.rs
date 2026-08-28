@@ -8,11 +8,17 @@
 //! simulation (Shamir/Lagrange) for comparison.
 
 pub mod dkg;
+pub mod envelope;
 pub mod errors;
+pub mod handshake;
+pub mod identity;
+pub mod lifecycle;
+pub mod network;
 pub mod participant;
 pub mod provider;
 pub mod session;
 pub mod signing;
+pub mod storage;
 pub mod tests_real;
 pub mod transcript;
 pub mod transport;
