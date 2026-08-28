@@ -1,0 +1,19 @@
+[package]
+name = "keymesh-tss-proto"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "KeyMesh Phase 2.2 threshold ECDSA prototype (2-of-3, isolated, not production)"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+k256 = { version = "0.13", features = ["ecdsa"] }
+ecdsa = { version = "0.16" }
+rand = "0.8"
+rand_chacha = "0.3"
+sha2 = "0.10"
+tiny-keccak = { version = "2", features = ["keccak"] }
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+hex = "0.4"
+
+[dev-dependencies]

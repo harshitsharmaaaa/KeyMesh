@@ -9,3 +9,4 @@ export * from './policy';
 export * from './transaction';
 export * from './validation';
 export * from './signing';
+export type { ThresholdConfig, SessionContext, SigningProvider as TssSigningProvider } from './tss-provider';

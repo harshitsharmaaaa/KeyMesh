@@ -162,7 +162,33 @@ At the end of Phase 2.1, every invariant below is **DESIGNED** only.
 |-----------|--------|
 | TSS-INV-01 … TSS-INV-16 | **DESIGNED** |
 
-No invariant above is implemented, tested, audited, or formally verified at this phase.
+No invariant above is implemented, tested, audited, or formally verified at Phase 2.1.
+
+## Phase 2.2 Prototype Status
+
+> **Maturity:** PROTOTYPED, TESTED (for selected invariants). NOT AUDITED, NOT FORMALLY VERIFIED.
+> **Prototype:** `crates/keymesh-tss-proto` (isolated, k256-based 2-of-3 simulation; production will use synedrion/cggmp21 CGGMP21). No `KeymeshWallet` changes.
+
+| ID | Invariant | Status | Evidence |
+|----|-----------|--------|----------|
+| TSS-INV-01 | fewer than threshold cannot sign | **TESTED** | `proto_tests::threshold_2of3_all_pairs_succeed_single_fails`, `no_exposed_reconstruct_in_public_api` — 1 share → Err |
+| TSS-INV-02 | coordinator cannot sign alone | **TESTED** | Same: coordinator holds no share; single-share attempt fails; transport verifies |
+| TSS-INV-03 | digest binding | **TESTED** | `signature_bound_to_keymesh_digest_modified_digest_fails`, `produced_signature_is_standard_ecdsa` |
+| TSS-INV-04 | session cannot be replayed | **TESTED** | `replayed_session_fails`, `abort_cannot_finalize_and_reuse_fails` |
+| TSS-INV-05 | share never reconstructs into full private key during normal signing | **DESIGNED + TESTED (boundary)** | No public `reconstruct_private_key()`; only `#[cfg(test)] reconstruct_secret_for_test`; `grep` for `reconstruct_private_key/combine_all_shares` yields no hits in `crates/keymesh-tss-proto/src` public path; signing reconstructs internally and zeroizes — documented as prototype limitation, production synedrion will not reconstruct |
+| TSS-INV-06 | no cross-wallet signing (participant messages bound to session) | **TESTED** | SessionId includes wallet/chainId/nonce; `wrong_participant_identity_fails`, `replayed_session_fails` |
+| TSS-INV-07 | no silent address change | **DESIGNED** | Refresh not implemented (see below); DKG produces deterministic address; replacement requires governance (documented) |
+| TSS-INV-08 | refresh preserves key if implemented | **DESIGNED — NOT IMPLEMENTED** | Refresh is DESIGNED in architecture docs; prototype does not implement (no fake refresh) |
+| TSS-INV-09 | abort cannot become authorization | **TESTED** | `abort_cannot_finalize_and_reuse_fails` — monotonic `SigningSessionStatus` |
+| TSS-INV-10 | digest substitution rejected | **TESTED** | `signature_bound_to_keymesh_digest_modified_digest_fails` — TSS-INV-10/03 |
+| TSS-INV-11 | participant authentication | **TESTED** | `wrong_participant_identity_fails` — duplicate/unknown participant → Err; transport `verify_binding` |
+| TSS-INV-12 | single-use signing material (no k reuse) | **TESTED** | `k` is RFC6979 deterministic but session_id + digest binding ensures fresh; `replayed_session_fails` + transport single-use checks; no k reuse across sessions |
+| TSS-INV-13 | policy-version binding at boundary | **DESIGNED + TESTED (binding)** | `SessionBinding.policy_version` included in `derive_session_id`; signing checks session_id matches binding |
+| TSS-INV-14 | canonical digest consistency | **TESTED** | `keymesh_digest_flow`, `TSSPrototype.t.sol` digest pin `0xef48...` |
+| TSS-INV-15 | no policy downgrade | **DESIGNED** | PolicyManager unchanged; signing does not bypass policy (boundary test in proto) |
+| TSS-INV-16 | participant-set changes require governance | **DESIGNED** | Documented: RecoveryManager governs replacement; prototype placeholder only |
+
+**Remaining:** No invariant is AUDITED or FORMALLY VERIFIED. Mapping to `docs/security/tss-testing-plan.md` categories is preserved.
 
 ## Testing Plan Reference
 

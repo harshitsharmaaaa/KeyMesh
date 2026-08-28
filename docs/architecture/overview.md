@@ -1,9 +1,8 @@
 # KeyMesh Architecture Overview
 
-> **Status: Phases 1.1-1.4 implemented; Phase 2.1 DESIGNED** — two real end-to-end paths
+> **Status: Phases 1.1-1.4 implemented; Phase 2.1 DESIGNED; Phase 2.2 PROTOTYPED** — two real end-to-end paths
 > (device-signed transactions AND guardian-quorum timelocked recovery with
-> device replacement) plus prototype scaffolding for everything else.
-> Phase 2.1 threshold signing is **DESIGNED only — not implemented, not audited**.
+> device replacement) plus TSS prototype (isolated 2-of-3, not production).
 > Components are labeled by maturity; nothing here is production-ready or
 > audited.
 
@@ -97,7 +96,7 @@ from a registered device's signature over the canonical digest.
 | Rust core             | prototype   | recovery/policy FSMs mirror contracts exactly + TX codec; mock crypto |
 | PolicyManager         | implemented (Phase 1.3) | deterministic classification + per-digest guardian transaction authorizations; enforced inside execute() |
 | Security hardening    | implemented (Phase 1.4) | invariant/fuzz coverage, security docs, and review checklist |
-| Threshold signing/MPC | designed (Phase 2.1) | [TSS Architecture](tss-mpc-architecture.md), [TSS Protocol](../protocol/tss-signing-protocol.md), [ADR-001](decisions/ADR-001-tss-strategy.md); NOT IMPLEMENTED, NOT AUDITED; recovery governance remains independent |
+| Threshold signing/MPC | prototyped (Phase 2.2) | [TSS Architecture](tss-mpc-architecture.md), [TSS Protocol](../protocol/tss-signing-protocol.md), [ADR-001](decisions/ADR-001-tss-strategy.md); isolated `crates/keymesh-tss-proto` (k256 2-of-3, low-s, ecrecover verified in `contracts/ethereum/test/TSSPrototype.t.sol`); NOT PRODUCTION, NOT AUDITED; recovery governance remains independent |
 | Solana adapter        | not started | later phase; chain-kind abstraction already exists; see [TSS Architecture §20](tss-mpc-architecture.md) for future EdDSA/FROST analysis |
 
 ## How a Phase 1.2 recovery flows
@@ -159,19 +158,19 @@ external call + TransactionExecuted
 Policy ADMINISTRATION is itself guardian-gated structurally: mutating
 PolicyManager always classifies DEVICE_PLUS_GUARDIANS, so a single device can
 never weaken policy.
-## TSS/MPC design (Phase 2.1 — design only)
+## TSS/MPC design (Phase 2.1 — design; Phase 2.2 — prototype)
 
 Threshold signing is **off-chain** and produces one standard ECDSA signature over `KEYMESH_TX_V1` for `KeymeshWallet` — no contract or digest changes. Design documents:
 
 * **Architecture:** [TSS/MPC Architecture](tss-mpc-architecture.md) — component diagram, participant/coordinator model, key lifecycle, DKG, refresh, replacement, Ethereum/Solana integration
 * **Protocol:** [TSS Signing Protocol](../protocol/tss-signing-protocol.md) — session ID, message types, sequencing, binding, failure/abort semantics
-* **Decision:** [ADR-001: TSS Strategy](decisions/ADR-001-tss-strategy.md) — candidate evaluation (threshold ECDSA vs. multisig/SSS/Schnorr), library candidates, build-vs-buy
+* **Decision:** [ADR-001: TSS Strategy](decisions/ADR-001-tss-strategy.md) — candidate evaluation (threshold ECDSA vs. multisig/SSS/Schnorr), verified library candidates (synedrion 0.3, cggmp21), prototype choice
 * **Threat model:** [TSS Threat Model](../security/tss-threat-model.md) — adversary model, trust model, 20-threat catalog
-* **Invariants:** [TSS Invariants](../security/tss-invariants.md) — 16 design invariants (DESIGNED)
+* **Invariants:** [TSS Invariants](../security/tss-invariants.md) — 16 invariants (Phase 2.2: TESTED where prototyped)
 * **Review checklist:** [TSS Review Checklist](../security/tss-review-checklist.md)
-* **Testing plan:** [TSS Testing Plan](../security/tss-testing-plan.md) — Phase 2.2+ coverage
+* **Testing plan:** [TSS Testing Plan](../security/tss-testing-plan.md) — Phase 2.2 coverage
 
-Type-only stubs (no crypto): `packages/protocol/src/signing.ts` and `crates/keymesh-core/src/signing/tss.rs`.
+Stubs: `packages/protocol/src/signing.ts` and `crates/keymesh-core/src/signing/tss.rs`. Prototype: `crates/keymesh-tss-proto` (2-of-3, 20 tests) + `contracts/ethereum/test/TSSPrototype.t.sol` (4 tests). No production wallet changes.
 
 ## Trust model summary
 

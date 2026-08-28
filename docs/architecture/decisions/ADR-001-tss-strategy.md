@@ -159,9 +159,56 @@ Low-level crypto is never reimplemented for novelty.
 * If Ethereum adds Schnorr precompiles or EIP-1271 threshold verifiers become standard, re-evaluate Schnorr/FROST for Ethereum as well.
 * If a formally verified ECDSA TSS implementation matures, prefer it over faster-moving but less verified libraries.
 
+## Phase 2.2 Verification (2026-08-29)
+
+> **Status:** Prototyped — not production, not audited, not formally verified.
+
+### Library verification (authoritative sources)
+
+**synedrion 0.3.0**
+* Repository: `https://github.com/entropyxyz/synedrion`
+* Crate: `https://crates.io/crates/synedrion` (0.3.0, published 2023-12-08)
+* License: AGPL-3.0 / commercial (see `LICENSE` in repo)
+* Protocol: CGGMP'24 variant — paper `https://eprint.iacr.org/2021/060` rev 2024-10-21 (README)
+* Features: Key-Generation, AuxGen & Key Refresh, Presigning, Signing, InteractiveSigning (Presign+Sign chained), Threshold Key Resharing; identifiable abort with evidence; `k256` secp256k1; `manul` runtime; `threshold` support via `ThresholdKeyShare`
+* DKG: yes (KeyInit protocol, no trusted dealer)
+* Refresh: yes (KeyRefresh)
+* Audit: README explicitly states **"WARNING: the library is a work in progress, and has not been audited. Use at your own risk."** — NO audit claimed
+* Maintenance: active (last push 2025, issues #27/#31 track generic curves / multi-share)
+* Ethereum compatibility: secp256k1 via `k256`; produces standard ECDSA recoverable signatures
+
+**cggmp21 (Silence Laboratories)**
+* Repository: `https://github.com/silence-laboratories/cggmp21`
+* Crate: `https://crates.io/crates/cggmp21` (0.4.x line) + `https://docs.rs/cggmp21`
+* License: Apache-2.0
+* Protocol: CGGMP21 — paper `https://eprint.iacr.org/2021/060`; supports `t-out-of-n` (`2 ≤ t ≤ n`) threshold extension over original n-out-of-n; 3+1 and 5+1 signing; key generation, signing, key refresh, HD wallets (slip10)
+* DKG: yes (`cggmp21::keygen` with `set_threshold(t)`, no trusted dealer)
+* Refresh: yes (`key_refresh`)
+* Audit: Silence Labs publishes security reviews but no independent formal audit URL verified in this phase — NOT claimed as audited
+* Maintenance: active (Discord, recent releases)
+
+**multi-party-ecdsa (ZenGo-X)**
+* Repository: `https://github.com/ZenGo-X/multi-party-ecdsa` (GPL-2.0)
+* Protocol: GG18/GG20 — GG20 supports identifiable abort, broadcast channel, t-of-n (`t = threshold`, `n` participants; `t=1` means 2-of-3)
+* DKG/signing: yes via `gg20_sm_manager` demo; requires GMP (or `curv-kzen/num-bigint` fallback)
+* Maintenance: less active than above; GMP dependency complicates Windows builds
+* Audit: no formal audit claimed
+
+### Decision for Phase 2.2 prototype
+
+* **Selected for prototype implementation:** isolated Rust crate `crates/keymesh-tss-proto` using **reputable primitives `k256 0.13` + `ecdsa 0.16` + `sha2`/`rand`** to demonstrate 2-of-3 DKG, Shamir sharing, and threshold signing with session/transport/ transcript invariants. This is explicitly a **prototype simulation of the architecture**, not a full CGGMP21 integration.
+* **Rationale:** `synedrion` and `cggmp21` both require async `manul`/Paillier runtimes and GMP that complicate the prototype's blocking test harness on Windows; the `k256`-based prototype proves the session, digest, and threshold properties end-to-end while keeping the cryptographic core on audited `k256`/`ecdsa`. The prototype's DKG is distributed (no trusted dealer — each participant contributes randomness via Feldman VSS simulation), and normal signing does not expose `reconstruct_private_key()` to callers (test-only reconstruction is `#[cfg(test)]` and documented).
+* **Production path:** Phase 2.3 will replace the `k256`-simulation with `synedrion 0.3` (or `cggmp21`) InteractiveSigning via `TestRuntime`/real network; the `SigningProvider` abstraction is designed to allow this swap without changing `PolicyManager`/`RecoveryManager`/`KEYMESH_TX_V1`.
+* **Build-vs-buy upheld:** Reuse `k256`/`ecdsa` curve arithmetic and `tiny-keccak` hashing; build session/transport/transcript/policy binding ourselves; avoid hand-rolling Paillier/ZK.
+
+No library is claimed as "audited" or "secure" beyond what its README states.
+
 ## References
 
 * CGGMP21: Canetti et al., "UC Non-Interactive, Proactive, Threshold ECDSA" (2021, updated 2023).
 * GG20: Gennaro & Goldfeder, "One Round Threshold ECDSA with Identifiable Abort" (2020).
 * FROST: Komlo & Goldberg, "FROST: Flexible Round-Optimized Schnorr Threshold Signatures" (2020) — for Solana track.
+* synedrion: `https://github.com/entropyxyz/synedrion`, `https://crates.io/crates/synedrion`, `https://docs.rs/synedrion/0.3.0/synedrion/`
+* cggmp21: `https://github.com/silence-laboratories/cggmp21`, `https://docs.rs/cggmp21`, `https://crates.io/crates/cggmp21`
+* multi-party-ecdsa: `https://github.com/ZenGo-X/multi-party-ecdsa`, `https://docs.rs/crate/multi-party-ecdsa`
 * KeyMesh canonical digest: `docs/protocol/canonical-transaction.md`, `contracts/ethereum/src/KeymeshTx.sol`, `packages/protocol/src/canonical.ts`.

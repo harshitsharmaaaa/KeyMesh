@@ -185,10 +185,10 @@ See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 4. Testing: property/fuzz suites, invariant tests, coverage gates
 
 **Phase 2 - Advanced cryptography & multi-chain**
-1. **Phase 2.1 — TSS/MPC Architecture & Cryptographic Design — DESIGNED (not implemented)** — threshold ECDSA strategy (CGGMP21), adversary/threat models, key lifecycle, signing protocol, and invariants. See [TSS Architecture](docs/architecture/tss-mpc-architecture.md), [TSS Signing Protocol](docs/protocol/tss-signing-protocol.md), [ADR-001](docs/architecture/decisions/ADR-001-tss-strategy.md), [TSS Threat Model](docs/security/tss-threat-model.md), [TSS Invariants](docs/security/tss-invariants.md), [TSS Review Checklist](docs/security/tss-review-checklist.md), [TSS Testing Plan](docs/security/tss-testing-plan.md). No production signing, contract, or digest changes in this phase.
-2. Threshold signing / MPC integration (audited stacks only) — Phase 2.2+ prototype
+1. **Phase 2.1 — TSS/MPC Architecture & Cryptographic Design — DESIGNED** — threshold ECDSA strategy (CGGMP21), adversary/threat models, key lifecycle, signing protocol, and invariants. See [TSS Architecture](docs/architecture/tss-mpc-architecture.md), [TSS Signing Protocol](docs/protocol/tss-signing-protocol.md), [ADR-001](docs/architecture/decisions/ADR-001-tss-strategy.md), [TSS Threat Model](docs/security/tss-threat-model.md), [TSS Invariants](docs/security/tss-invariants.md), [TSS Review Checklist](docs/security/tss-review-checklist.md), [TSS Testing Plan](docs/security/tss-testing-plan.md).
+2. **Phase 2.2 — Threshold ECDSA Cryptographic Prototype — PROTOTYPED (isolated, not production)** — 2-of-3 DKG + threshold signing producing standard low-s `(r,s,v)` over `KEYMESH_TX_V1`, verified via `ecrecover` in `contracts/ethereum/test/TSSPrototype.t.sol`. Isolated crate `crates/keymesh-tss-proto` (`k256`); no `KeymeshWallet`/`PolicyManager`/`RecoveryManager` changes. See prototype docs and `docs/security/tss-invariants.md` (Phase 2.2 status).
 3. Solana adapter (chain-kind abstraction already exists)
-4. Advanced cryptography: key-share rotation, proactive refresh
+4. Advanced cryptography: key-share rotation, proactive refresh (DESIGNED, NOT IMPLEMENTED in prototype)
 5. Security hardening: audits, fuzzing campaigns, formal specs where warranted
 ## License
 
