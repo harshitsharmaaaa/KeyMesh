@@ -13,9 +13,12 @@ timelock -> atomic device replacement, old device revoked). The transitional
 manager account is now bootstrap-only and provably powerless after
 initialization. Phase 1.3 policy enforcement is live, and Phase 1.4 adds
 security hardening, fuzzing, and invariant coverage. This codebase is **not
-audited** and **not production-ready**; threshold cryptography (TSS/MPC) does
-**not** exist yet. See
-[docs/security/security-model.md](docs/security/security-model.md).
+audited** and **not production-ready**. Threshold cryptography (TSS/MPC)
+exists as an isolated real prototype in `crates/keymesh-tss`, but the
+distributed runtime decision is deferred pending a safe participant-level
+execution model. See
+[docs/security/security-model.md](docs/security/security-model.md) and
+[docs/architecture/tss-runtime-feasibility.md](docs/architecture/tss-runtime-feasibility.md).
 
 ## What is KeyMesh?
 
@@ -188,9 +191,10 @@ See [contracts/ethereum/README.md](contracts/ethereum/README.md).
 1. **Phase 2.1 — TSS/MPC Architecture & Cryptographic Design — DESIGNED** — threshold ECDSA strategy (CGGMP21), adversary/threat models, key lifecycle, signing protocol, and invariants. See [TSS Architecture](docs/architecture/tss-mpc-architecture.md), [TSS Signing Protocol](docs/protocol/tss-signing-protocol.md), [ADR-001](docs/architecture/decisions/ADR-001-tss-strategy.md), [TSS Threat Model](docs/security/tss-threat-model.md), [TSS Invariants](docs/security/tss-invariants.md), [TSS Review Checklist](docs/security/tss-review-checklist.md), [TSS Testing Plan](docs/security/tss-testing-plan.md).
 2. **Phase 2.2 — Threshold ECDSA Cryptographic Prototype — PROTOTYPED (isolated, k256 simulation)** — 2-of-3 DKG + threshold signing producing standard low-s `(r,s,v)` over `KEYMESH_TX_V1`, verified via `ecrecover` in `contracts/ethereum/test/TSSPrototype.t.sol`. Isolated crate `crates/keymesh-tss-proto` (`k256`); no `KeymeshWallet`/`PolicyManager`/`RecoveryManager` changes. See `docs/security/tss-invariants.md` (Phase 2.2 status).
 3. **Phase 2.3 — Real Threshold ECDSA via synedrion — REAL PROTOTYPE (isolated, not production)** — `crates/keymesh-tss` using `synedrion 0.3` CGGMP'24 (`KeyInit` → `KeyResharing` → `AuxGen` → `InteractiveSigning` via `manul::TestRuntime`), 2-of-3, no application-level reconstruction, low-s + `ecrecover` verified. Heavy Paillier tests are Linux CI only (`.github/workflows/tss.yml`). No `KeymeshWallet`/`KEYMESH_TX_V1` changes. See `crates/keymesh-tss/README.md` and `docs/security/tss-invariants.md` (Phase 2.3).
-4. Solana adapter (chain-kind abstraction already exists)
-5. Advanced cryptography: key-share rotation, proactive refresh (DESIGNED in Phase 2.1; refresh via `KeyRefresh` exists in synedrion but not wired)
-6. Security hardening: audits, fuzzing campaigns, formal specs where warranted
+4. **Phase 2.5C — TSS runtime feasibility and architecture decision — DECIDED** — `manul` exposes public protocol/session primitives, but not a supported participant-process runtime; distributed runtime is deferred pending a safe boundary.
+5. Solana adapter (chain-kind abstraction already exists)
+6. Advanced cryptography: key-share rotation, proactive refresh (DESIGNED in Phase 2.1; refresh via `KeyRefresh` exists in synedrion but not wired)
+7. Security hardening: audits, fuzzing campaigns, formal specs where warranted
 ## License
 
 MIT OR Apache-2.0 (to be finalized).

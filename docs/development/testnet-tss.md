@@ -22,11 +22,23 @@ forge build
 → create KEYMESH_TX_V1 (value transfer, empty calldata)
 → PolicyManager check
 → ThresholdEcdsaProvider.sign(binding, [0,1], session_id)  (A+B)
+→ real socket transport between participant OS processes
 → verify low-s, ecrecover == group address
 → broadcast via viem, wait receipt, verify nonce+event
 ```
 
 Dedicated testnet wallet per TSS group address avoids changing production semantics.
+
+## Network transport
+
+`crates/keymesh-tss/src/network.rs` now provides:
+
+* `InMemoryAuthenticatedTransport` for tests
+* `TcpAuthenticatedTransport` for socket-backed local participant processes
+* length-prefixed frames with `MAX_TSS_MESSAGE_BYTES = 64 KiB`
+* application-level envelope checks for session, wallet, chain, digest, participant, round, and protocol version
+
+Oversized or malformed frames are rejected before envelope processing.
 
 ## Safety
 
