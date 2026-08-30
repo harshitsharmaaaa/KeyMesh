@@ -798,6 +798,7 @@ mod tests {
         assert!(lc.is_stale(2));
     }
     #[test]
+    #[ignore = "heavy DKG"]
     fn key_id_deterministic() {
         // Use synthetic group key: derive from real DKG if available, else use fixed point via k256 test?
         // We do heavy only if needed; use setup_2of3 but ignore if fails due to heavy

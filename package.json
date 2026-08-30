@@ -13,7 +13,8 @@
     "clean": "turbo run clean && rm -rf node_modules .turbo",
     "rust:test": "cargo test --manifest-path crates/keymesh-core/Cargo.toml",
     "contracts:test": "forge test --root contracts/ethereum",
-    "integration:anvil": "bun packages/sdk/scripts/anvil-integration.ts"
+    "integration:anvil": "bun packages/sdk/scripts/anvil-integration.ts",
+    "verify:security": "bun run format:check && bun run lint && bun run typecheck && bun run test && cargo fmt --check --manifest-path crates/keymesh-core/Cargo.toml && cargo test --manifest-path crates/keymesh-core/Cargo.toml --locked && cargo clippy --manifest-path crates/keymesh-core/Cargo.toml --all-targets --all-features --locked -- -D warnings && cargo test --manifest-path crates/keymesh-tss/Cargo.toml --locked && cargo test --manifest-path crates/keymesh-tss-proto/Cargo.toml --locked && forge test --root contracts/ethereum"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

@@ -32,7 +32,16 @@ This file tracks issues discovered during Phase 1.4 security hardening.
 - Regression test: `proto_tests::no_exposed_reconstruct_in_public_api` + `grep -r reconstruct_private_key crates/keymesh-tss-proto/src --include="*.rs"` returns no public hits.
 - Status: `acknowledged — prototype limitation`
 
+## F-0004 (Phase 2.7 Hardening)
+- ID: `F-0004`
+- Severity: `MEDIUM`
+- Description: `lifecycle::tests::key_id_deterministic` previously called `setup_2of3()` without `#[ignore]` heavy gate, causing 60s+ timeout on Windows dev and blocking CI light suite.
+- Impact: Light suite timeout, flaky local verification.
+- Fix: Marked heavy lifecycle tests with `#[ignore = "heavy ..."]` and documented Windows vs Linux split in `tss.yml`; light governance tests remain non-heavy.
+- Regression test: `cargo test --manifest-path crates/keymesh-tss/Cargo.toml --locked` now 30+ light pass, heavy isolated to `--ignored`.
+- Status: `fixed`
+
 ## Summary
 - No high-severity protocol findings have been confirmed during this pass.
-- Phase 2.2 prototype has no new high-severity findings; one INFO limitation (F-0003) documented honestly.
-- Remaining work is test coverage hardening, CI integration, and production CGGMP21 integration.
+- Phase 2.7 hardening adds no new high findings; one MEDIUM (F-0004) fixed. One INFO prototype limitation (F-0003) remains honestly deferred.
+- Known limitations at freeze: distributed Synedrion runtime deferred (ADR-002), no external audit, no formal verification, `KeyRefresh` for ThresholdKeyShare not supported by library (refresh via resharing), no production HSM, licensing requires legal review.

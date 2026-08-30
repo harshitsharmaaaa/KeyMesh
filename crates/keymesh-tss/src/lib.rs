@@ -22,6 +22,7 @@ pub mod provider;
 pub mod session;
 pub mod signing;
 pub mod storage;
+pub mod tests_adversarial;
 pub mod tests_lifecycle;
 pub mod tests_real;
 pub mod transcript;
