@@ -18,4 +18,20 @@ pub enum TssError {
     UnknownParticipant,
     #[error("aborted: {0}")]
     Aborted(String),
+    #[error("lifecycle error: {0}")]
+    Lifecycle(String),
+    #[error("lifecycle locked: {0}")]
+    LifecycleLocked(String),
+    #[error("stale participant set version: expected {expected}, got {got}")]
+    StaleVersion { expected: u64, got: u64 },
+    #[error("retired: {0}")]
+    Retired(String),
+    #[error("governance error: {0}")]
+    Governance(String),
+    #[error("refresh failed: {0}")]
+    RefreshFailed(String),
+    #[error("rotation failed: {0}")]
+    RotationFailed(String),
+    #[error("invalid participant set: {0}")]
+    InvalidParticipantSet(String),
 }

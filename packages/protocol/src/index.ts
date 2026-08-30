@@ -9,6 +9,7 @@ export * from './policy';
 export * from './transaction';
 export * from './validation';
 export * from './signing';
+export * from './tss-lifecycle';
 export type {
   ThresholdConfig,
   SessionContext,

@@ -6,7 +6,6 @@ use synedrion::InteractiveSigning;
 
 use crate::dkg::ThresholdKeyMaterial;
 use crate::errors::TssError;
-use crate::participant::Params;
 use crate::session::{SessionBinding, SessionId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

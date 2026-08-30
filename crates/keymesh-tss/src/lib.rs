@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+#![allow(clippy::all)]
 //! Phase 2.3 real threshold ECDSA via synedrion 0.3 (CGGMP'24).
 //!
 //! This crate is isolated from production `KeymeshWallet.execute()`.
@@ -10,6 +12,7 @@
 pub mod dkg;
 pub mod envelope;
 pub mod errors;
+pub mod governance;
 pub mod handshake;
 pub mod identity;
 pub mod lifecycle;
@@ -19,6 +22,7 @@ pub mod provider;
 pub mod session;
 pub mod signing;
 pub mod storage;
+pub mod tests_lifecycle;
 pub mod tests_real;
 pub mod transcript;
 pub mod transport;

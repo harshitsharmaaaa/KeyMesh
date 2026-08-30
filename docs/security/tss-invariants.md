@@ -236,6 +236,33 @@ Heavy synedrion DKG/signing tests are `#[ignore]` on Windows local — run on Li
 
 **Note:** Refresh/rotation are honestly `NOT IMPLEMENTED` in Phase 2.5 prototype (see `lifecycle.rs`); production will use synedrion `KeyRefresh`/`KeyResharing` with governance. Share storage `EncryptedShareStore` (ChaCha20Poly1305, 0o600, zeroize) ensures only own share loaded (`participant/src/bin/participant.rs` — never `[shareA,shareB,shareC]`).
 
+## Phase 2.6 Key Lifecycle Status
+
+> **Maturity:** REAL LIFECYCLE (isolated `crates/keymesh-tss` via `synedrion 0.3` `KeyResharing`+`AuxGen`), NOT PRODUCTION, NOT AUDITED, NOT FORMALLY VERIFIED.
+> **Refresh:** REAL via resharing to same set (preserves VK); `KeyRefresh` for `ThresholdKeyShare` is `NOT SUPPORTED BY LIBRARY` (only for `KeyShare` n-of-n)
+> **Rotation:** REAL via `KeyResharing` with guardian quorum + timelock (`governance.rs`); `TestRuntime` isolated, not multi-process production
+
+| ID | Invariant | Phase 2.6 Status | Evidence |
+|----|-----------|------------------|----------|
+| LIFE-INV-01 | refresh preserves group public key | **TESTED** | `tests_lifecycle::refresh_preserves_group_key_and_signs` — `vk_before == vk_after` after `KeyLifecycle::refresh()` via `KeyResharing` |
+| LIFE-INV-02 | refresh preserves wallet address | **TESTED** | Same test — `ethereum_address` unchanged |
+| LIFE-INV-03 | rotation requires governance | **TESTED** | `governance_quorum_enforced`, `timelock_enforced`, `stale_single_guardian_cannot_complete` — `TssRotationRequest` quorum 2-of-3 + 3600s timelock |
+| LIFE-INV-04 | stale participant set cannot sign | **TESTED** | `stale_share_rejected`, `old_share_mixed_with_new_rejected_via_version` — `check_signing_allowed(old_version) → Err(StaleVersion)` |
+| LIFE-INV-05 | failed rotation preserves old active state | **TESTED** | `rotation_failed_preserves_old_state` — invalid threshold → `state==Active`, version unchanged |
+| LIFE-INV-06 | failed refresh preserves old active state | **TESTED** | `failed_refresh_preserves_old_state` — no material → Active preserved |
+| LIFE-INV-07 | lifecycle operations cannot race unsafely | **TESTED** | `concurrent_lifecycle_operations_blocked` — `Refreshing`/`Rotating` → `can_mutate()=false`, `check_signing_allowed` blocks |
+| LIFE-INV-08 | retired key cannot sign | **TESTED** | `retirement_prevents_future_signing` — `retire()` → `Retired` terminal, `check_signing_allowed → Err(Retired)` |
+| LIFE-INV-09 | participant set version is monotonic | **TESTED** | `rotation_governed_and_preserves_group_key` — version 1→2, keyId changes, old version rejected |
+| LIFE-INV-10 | cryptographic lifecycle cannot bypass RecoveryManager | **TESTED** | `governance::tests::*` + `lifecycle::begin_rotation` checks `is_executable` (quorum+timelock), stale version, group key binding |
+| NET-INV-08 | rotation requires governance | **TESTED** (was DESIGNED) | Now real: `TssRotationRequest` with `RecoveryManager` timelock semantics |
+| NET-INV-09 | refresh preserves group identity | **TESTED** (was DESIGNED) | Real resharing refresh preserves VK/addr |
+
+Heavy refresh/rotation tests are `#[ignore]` on Windows — run on Linux CI with `cargo test -- --ignored`.
+
+## Lifecycle Threat Model
+
+See `docs/security/tss-lifecycle-threat-model.md` for stale-share, half-rotation, coordinator-forge threats.
+
 ## Testing Plan Reference
 
 Each invariant maps to tests in `docs/security/tss-testing-plan.md`:

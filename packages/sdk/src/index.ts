@@ -57,6 +57,11 @@ export {
   type PolicyTxInput,
 } from './onchain/policy';
 export { canonicalTransactionHex, hashKeymeshTransaction } from '@keymesh/protocol';
+export {
+  InMemoryTssLifecycle,
+  type TssLifecycleApi,
+  type InitiateRotationInput,
+} from './tss-lifecycle';
 
 import type {
   AuthorizationMode,
