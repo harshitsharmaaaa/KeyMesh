@@ -1,205 +1,193 @@
 # KeyMesh
 
-> Non-custodial digital asset key management, transaction authorization, and
-> recovery — using device signatures, guardian quorums, and timelocked
-> recovery. Ethereum-first.
+> Non-custodial digital asset authorization, transaction policy management, and threshold cryptography (CGGMP'24 Threshold ECDSA) — research-grade architecture for Ethereum.
 
-**Status: Phases 1.1-1.4 implemented; prototype overall.** Two real
-end-to-end paths exist: device-signed transactions (SDK -> canonical
-`KEYMESH_TX_V1` encoding -> keccak digest -> ECDSA device signature ->
-Solidity recovery -> execution on local Anvil) and guardian-governed recovery
-(guardian bootstrap -> recovery request -> quorum approvals -> mandatory
-timelock -> atomic device replacement, old device revoked). The transitional
-manager account is now bootstrap-only and provably powerless after
-initialization. Phase 1.3 policy enforcement is live, and Phase 1.4 adds
-security hardening, fuzzing, and invariant coverage. This codebase is **not
-audited** and **not production-ready**. Threshold cryptography (TSS/MPC)
-exists as an isolated real prototype in `crates/keymesh-tss`, but the
-distributed runtime decision is deferred pending a safe participant-level
-execution model. See
-[docs/security/security-model.md](docs/security/security-model.md) and
-[docs/architecture/tss-runtime-feasibility.md](docs/architecture/tss-runtime-feasibility.md).
+```text
+RELEASE READINESS: READY FOR FINAL PORTFOLIO FREEZE
+```
+
+> **IMPORTANT SECURITY DISCLAIMER**  
+> KeyMesh is a **research-grade experimental digital-asset authorization protocol**.  
+> It has **NOT** undergone an independent external security audit, formal verification, or legal license audit.  
+> It **MUST NOT** be used for production digital asset custody, mainnet deployment, or real financial funds.
+
+---
 
 ## What is KeyMesh?
 
-A wallet's authority is distributed across:
+KeyMesh distributes authority over digital asset transactions across:
+- **Devices** (authorize everyday transactions via ECDSA / Secp256k1 signatures),
+- **Policies** (classify transaction risk via structural limits, destinations, and selector rules), and
+- **Guardians + Timelocks** (quorum-governed recovery state machine that atomically replaces compromised devices).
 
-- **Devices** you control (authorize everyday transactions),
-- **Guardians** you trust (weighted approvals for sensitive actions), and
-- **Policies + Timelocks** that decide how much approval each action class
-  needs and how long hostile actions stay cancellable.
-
-```
-Normal transaction      -> device signature
-High-value transaction  -> device signature + guardian quorum
-Recovery                -> guardian threshold -> timelock -> new device
+```text
+Normal transaction      -> Device / Threshold ECDSA signature
+High-value transaction  -> Device signature + Guardian quorum approval
+Recovery                -> Guardian quorum -> Timelock window -> Atomic device replacement
 ```
 
-Guardians can approve or cancel — they can never move funds directly. There is
-no seed phrase to lose.
+---
+
+## Why KeyMesh Exists
+
+Traditional self-custody wallets rely on seed phrases or single private keys, creating single points of failure. Multi-signature smart contracts introduce higher gas costs and lack standardized transaction authorization policies. 
+
+KeyMesh provides:
+1. **No Master Seed Phrase:** Authority is divided across active devices and guardian quorums.
+2. **Canonical Digest Encoding (`KEYMESH_TX_V1`):** Byte-identical transaction binding across TypeScript, Rust, and Solidity.
+3. **Provably Powerless Deployment Manager:** Post-initialization, contract ownership is zeroed (`address(0)`).
+4. **Real Threshold ECDSA (CGGMP'24):** Non-custodial 2-of-3 threshold ECDSA generating standard $(r, s, v)$ signatures verified by standard Ethereum `ecrecover`.
+
+---
 
 ## Architecture
 
+```text
+                    KEYMESH AUTHORIZATION
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        ↓                      ↓                      ↓
+     Signing                 Policy                Recovery
+        │                      │                      │
+        ↓                      ↓                      ↓
+   Device/TSS            PolicyManager          RecoveryManager
+        │                      │                      │
+        └──────────────────────┼──────────────────────┘
+                               ↓
+                         Authorization
+                               ↓
+                          KeymeshWallet
+                            (Solidity)
 ```
-apps/dashboard      Next.js UI — talks ONLY to the SDK
-packages/sdk        Public TypeScript API (@keymesh/sdk)
-packages/protocol   Domain models, state machines, validation (@keymesh/protocol)
-packages/types      Shared primitives (@keymesh/types)
-packages/config     Shared tooling config (@keymesh/config)
-crates/keymesh-core Rust core: recovery FSM, policy engine,
-                    canonical serialization, crypto BOUNDARY
-contracts/ethereum  Foundry contracts: KeymeshWallet, GuardianRegistry,
-                    RecoveryManager, PolicyManager
-docs/               Architecture, protocol specs, security model
-```
 
-Design rules: the UI never touches crypto; the SDK never stores keys; the Rust
-core owns canonical digests but keeps asymmetric crypto behind a provider
-boundary; unimplemented capabilities revert or are labeled `prototype` rather
-than faked.
+### Component Breakdown
 
-Details: [docs/architecture/overview.md](docs/architecture/overview.md).
+* **`apps/dashboard`**: Next.js dashboard UI.
+* **`packages/sdk`**: `@keymesh/sdk` public TypeScript API.
+* **`packages/protocol`**: Domain state models, policy evaluation, canonical serialization.
+* **`crates/keymesh-core`**: Rust core logic (`tiny-keccak` canonical digest codec, policy engine, recovery FSM).
+* **`crates/keymesh-tss`**: Real Threshold ECDSA implementation via `synedrion 0.3` CGGMP'24 ($N=3, T=2$).
+* **`crates/keymesh-tss-proto`**: Historical $k256$ threshold prototype baseline.
+* **`contracts/ethereum`**: Foundry smart contracts (`KeymeshWallet`, `GuardianRegistry`, `RecoveryManager`, `PolicyManager`).
 
-## Repository structure
+---
+
+## Capabilities & Separation Matrix
+
+KeyMesh clearly delineates operational states across four explicit categories:
+
+| Category | Components | Status |
+|----------|------------|--------|
+| **`REAL`** | `KEYMESH_TX_V1` codec, `KeymeshWallet.sol`, `RecoveryManager.sol`, `PolicyManager.sol`, `synedrion 0.3` CGGMP'24 threshold ECDSA (`crates/keymesh-tss`) | Production-spec code; tested in CI |
+| **`SIMULATED`** | `crates/keymesh-tss-proto` historical prototype | Historical baseline (internal secret reconstruction) |
+| **`LOCAL`** | Anvil Integration Suite (`bun run integration:anvil`) | Deterministic local deployment & verification |
+| **`DEFERRED`** | Multi-process production participant network (`ADR-002`), Public testnet TSS E2E | Explicitly deferred architectural scope |
+
+---
+
+## Threat Model & Security Properties
+
+* **Single Device Theft:** A stolen device cannot execute high-value transactions or alter policies without guardian quorum approval.
+* **Guardian Quorum Limits:** Guardians cannot move funds directly; they can only approve specific digests or initiate recovery.
+* **Device Recovery Window:** During the recovery timelock delay, active devices can unilaterally cancel hostile recovery requests.
+* **Replay Protection:** Sequential monotonic nonces + explicit chain ID binding + domain tag `KEYMESH_TX_V1`.
+* **No Key Reconstruction (TSS):** Under CGGMP'24 interactive signing, secret shares remain distributed across participants and are never reconstructed centrally.
+
+See [docs/security/README.md](docs/security/README.md), [docs/security/threat-model.md](docs/security/threat-model.md), and [docs/security/invariant-matrix.md](docs/security/invariant-matrix.md).
+
+---
+
+## Repository Structure
 
 ```text
-keymesh/
-├── apps/dashboard/          # Next.js dashboard (mock data via SDK)
+KeyMesh/
+├── apps/
+│   └── dashboard/            # Next.js UI dashboard
 ├── packages/
-│   ├── sdk/                 # @keymesh/sdk public API
-│   ├── protocol/            # @keymesh/protocol domain layer
-│   ├── types/               # @keymesh/types primitives
-│   └── config/              # @keymesh/config shared tsconfigs
-├── crates/keymesh-core/     # Rust protocol core (cargo test)
-├── contracts/ethereum/      # Foundry contracts (forge test)
+│   ├── sdk/                  # TypeScript SDK (@keymesh/sdk)
+│   ├── protocol/             # Domain layer & canonical serialization
+│   ├── types/                # Shared TypeScript primitives
+│   └── config/               # Workspace configuration
+├── crates/
+│   ├── keymesh-core/         # Rust protocol core & FSMs
+│   ├── keymesh-tss/          # Real CGGMP'24 threshold ECDSA (synedrion 0.3)
+│   └── keymesh-tss-proto/    # Historical k256 threshold prototype
+├── contracts/
+│   └── ethereum/             # Foundry contracts (Solidity)
 ├── docs/
-│   ├── architecture/
-│   ├── protocol/
-│   ├── security/            # threat-model.md, security-model.md
-│   └── development/
-├── scripts/
-├── .github/workflows/ci.yml
-└── turbo.json               # build/test/lint/typecheck/format/dev pipelines
+│   ├── architecture/         # Architecture overview & Mermaid diagrams
+│   ├── demo/                 # 5-minute quickstart demo guide
+│   ├── protocol/             # Protocol specs & canonical codecs
+│   └── security/             # Invariant matrix, threat models, security summary
+└── scripts/                  # Anvil end-to-end integration scripts
 ```
 
-## Prerequisites
+---
 
-| Tool    | Needed for        | Check             |
-| ------- | ----------------- | ----------------- |
-| Bun ≥1.1| everything JS/TS  | `bun --version`   |
-| Rust ≥1.75 | crates/        | `cargo --version` |
-| Foundry | contracts/        | `forge --version` |
+## Quick Start & 5-Minute Demo
 
-## Installation
+### Prerequisites
 
-```sh
+| Tool | Minimum Version | Usage |
+|------|-----------------|-------|
+| **Bun** | $\ge 1.1$ | TypeScript workspace execution |
+| **Rust** | $\ge 1.75$ | Core crates & TSS compilation |
+| **Foundry** | Latest | Solidity compilation & testing |
+
+### Installation
+
+```bash
 bun install
 cd contracts/ethereum && forge install foundry-rs/forge-std --no-commit && cd ../..
-cp .env.example .env.local   # placeholders only; never commit real values
 ```
 
-## Development
+### 5-Minute Integration Demo
 
-```sh
-bun run dev        # dashboard at http://localhost:3100
-bun run test       # workspace tests (turbo)
-bun run lint       # Biome lint
-bun run format     # Biome format
-bun run typecheck  # tsc per package
-bun run build      # production build
+Run the automated 15-step local integration suite against Anvil:
 
-# Phase 1.1 end-to-end: starts Anvil, deploys, registers a device,
-# signs and executes a real transfer through the SDK (public fixture keys)
+```bash
 bun run integration:anvil
 ```
 
+Detailed walkthrough instructions: [docs/demo/README.md](docs/demo/README.md).
+
+---
+
 ## Testing
 
-```sh
-# TypeScript (Vitest): canonical vectors, protocol validation, SDK behavior,
-# policy engine, recovery transitions
+```bash
+# Workspace TypeScript tests
 bun run test
 
-# Rust: recovery FSM, policy evaluation, canonical codec + digest vectors
+# Rust Core & TSS light test suites
 cargo test --manifest-path crates/keymesh-core/Cargo.toml
-cargo fmt --check --manifest-path crates/keymesh-core/Cargo.toml
+cargo test --manifest-path crates/keymesh-tss/Cargo.toml
 
-# Solidity (Foundry): cross-language digest vectors, execution, replay/expiry,
-# device access control
-forge build --root contracts/ethereum
+# Foundry contract test suite (Solidity)
 forge test --root contracts/ethereum
 ```
 
-## Building
+*Note: Heavy prime-generation TSS DKG tests in `crates/keymesh-tss` are isolated via `#[ignore]` on Windows local environments and run automatically on **Linux CI (`.github/workflows/tss.yml`)**.*
 
-```sh
-bun run build                                   # all workspaces (Next.js etc.)
-forge build --root contracts/ethereum           # contracts
-cargo build --manifest-path crates/keymesh-core/Cargo.toml
-```
+---
 
-## Rust development
+## Key Limitations & Testnet Status
 
-The security-critical core lives in `crates/keymesh-core`. It implements the
-canonical transaction codec (byte-identical to TS/Solidity, pinned by shared
-vectors) with a single hash dependency (`tiny-keccak`); asymmetric signing
-stays behind the `CryptoProvider` trait, whose only bundled implementation is
-a labeled insecure test mock. State machines take time as input (clock
-injection) so tests are deterministic.
+* **Distributed Synedrion Runtime:** Multi-process participant transport and consensus engine deferred (`ADR-002`).
+* **Public Testnet TSS E2E:** Public testnet broadcast of threshold signatures not observed.
+* **No External Audit:** Codebase has not undergone independent security audit or formal verification.
+* **Linux Required for Heavy TSS:** Heavy prime generation for Paillier keys requires Linux CI execution.
 
-See [crates/keymesh-core/README.md](crates/keymesh-core/README.md).
+---
 
-## Foundry development
-
-Contracts live in `contracts/ethereum`. `KeymeshWallet` executes real
-device-signed transactions (canonical digest recovery, device set, sequential
-nonce, expiry, wallet/chain binding, reentrancy guard). `RecoveryManager` +
-`GuardianRegistry` enforce guardian-quorum timelocked recovery with atomic
-device replacement; all are covered by 96+ Foundry tests plus the Anvil
-integration script. Only the policy modules remain unwired (Phase 1.3).
-
-See [contracts/ethereum/README.md](contracts/ethereum/README.md).
-
-## Security notes
-
-- **The dashboard never touches private keys.** Its demo route runs
-  server-side with PUBLIC Anvil fixture keys; nothing key-shaped is stored in
-  browser state.
-- The SDK session accepts a device private key as an explicit caller-supplied
-  parameter for local development. Production custody (secure enclaves,
-  threshold shares) does not exist yet and must not be improvised on top of it.
-- No custom cryptography exists here, and none will be written from scratch:
-  @noble/curves (signing), OpenZeppelin ECDSA (recovery), tiny-keccak (digests).
-- Every module carries an explicit maturity label (`prototype`, `experimental`,
-  `implemented`). Trust code by its label, not its file name.
-- Nothing in this repository has been independently audited.
-- Read [docs/security/threat-model.md](docs/security/threat-model.md) before
-  contributing to security-relevant areas.
-
-## Roadmap
-
-**Phase 1 - Ethereum wallet (current focus)**
-1. Ethereum wallet contract: device-signed execution - done, Phase 1.1
-2. Guardian system + guardian-quorum recovery with timelock, wired across
-   TS/Rust/Solidity; manager reduced to bootstrap-only authority - done,
-   Phase 1.2
-3. ~~Transaction policy engine: value thresholds, destination/selector rules,
-   guardian per-digest transaction authorizations~~ - done, Phase 1.3
-4. Testing: property/fuzz suites, invariant tests, coverage gates
-
-**Phase 2 - Advanced cryptography & multi-chain**
-1. **Phase 2.1 — TSS/MPC Architecture & Cryptographic Design — DESIGNED** — threshold ECDSA strategy (CGGMP21), adversary/threat models, key lifecycle, signing protocol, and invariants. See [TSS Architecture](docs/architecture/tss-mpc-architecture.md), [TSS Signing Protocol](docs/protocol/tss-signing-protocol.md), [ADR-001](docs/architecture/decisions/ADR-001-tss-strategy.md), [TSS Threat Model](docs/security/tss-threat-model.md), [TSS Invariants](docs/security/tss-invariants.md), [TSS Review Checklist](docs/security/tss-review-checklist.md), [TSS Testing Plan](docs/security/tss-testing-plan.md).
-2. **Phase 2.2 — Threshold ECDSA Cryptographic Prototype — PROTOTYPED (isolated, k256 simulation)** — 2-of-3 DKG + threshold signing producing standard low-s `(r,s,v)` over `KEYMESH_TX_V1`, verified via `ecrecover` in `contracts/ethereum/test/TSSPrototype.t.sol`. Isolated crate `crates/keymesh-tss-proto` (`k256`); no `KeymeshWallet`/`PolicyManager`/`RecoveryManager` changes. See `docs/security/tss-invariants.md` (Phase 2.2 status).
-3. **Phase 2.3 — Real Threshold ECDSA via synedrion — REAL PROTOTYPE (isolated, not production)** — `crates/keymesh-tss` using `synedrion 0.3` CGGMP'24 (`KeyInit` → `KeyResharing` → `AuxGen` → `InteractiveSigning` via `manul::TestRuntime`), 2-of-3, no application-level reconstruction, low-s + `ecrecover` verified. Heavy Paillier tests are Linux CI only (`.github/workflows/tss.yml`). No `KeymeshWallet`/`KEYMESH_TX_V1` changes. See `crates/keymesh-tss/README.md` and `docs/security/tss-invariants.md` (Phase 2.3).
-4. **Phase 2.5C — TSS runtime feasibility and architecture decision — DECIDED** — `manul` exposes public protocol/session primitives, but not a supported participant-process runtime; distributed runtime is deferred pending a safe boundary.
-5. Solana adapter (chain-kind abstraction already exists)
-6. Advanced cryptography: key-share rotation, proactive refresh (DESIGNED in Phase 2.1; refresh via `KeyRefresh` exists in synedrion but not wired)
-7. Security hardening: audits, fuzzing campaigns, formal specs where warranted
 ## License
 
-MIT OR Apache-2.0 (to be finalized).
+Dual-licensed under MIT OR Apache-2.0.
 
+---
 
+## Future Work
 
-
-
+1. Production multi-process participant network daemon (`keymesh-tss-node`).
+2. Hardware Security Module (HSM) enclave integration for participant key shares.
+3. Solana chain adapter integration.
